@@ -63,12 +63,12 @@ export class AuthController {
 
     res.cookie('accessToken', result.access_token, {
       httpOnly: true,
-      secure: false, // Set to true only in production (HTTPS)
-      sameSite: 'lax', // Crucial for redirects between :3003 and :3000
+      secure: true, // Set to true only in production (HTTPS)
+      sameSite: 'none', // Crucial for redirects between :3003 and :3000
       maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/',
     });
 
-    return res.redirect(`http://localhost:3000/${result.role}/dashboard`);
+    return res.redirect(`${process.env.FRONTEND_URL}/${result.role}/dashboard`);
   }
 }
