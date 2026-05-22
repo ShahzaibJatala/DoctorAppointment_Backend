@@ -16,7 +16,7 @@ async function bootstrap() {
   );
 
   app.enableCors({
-    origin: ['http://localhost:3000', 'http://localhost:3001'], // Your Next.js URL
+    origin: ['https://doctor-appointment-system-seven-xi.vercel.app/'], // Your Next.js URL
     credentials: true, // Allow cookies to be sent/received
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
   });
