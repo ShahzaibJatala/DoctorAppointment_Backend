@@ -19,6 +19,7 @@ async function bootstrap() {
     origin: ['https://doctor-appointment-system-seven-xi.vercel.app'], // Your Next.js URL
     credentials: true, // Allow cookies to be sent/received
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    allowedHeaders: 'Content-Type, Accept, Authorization',
   });
 
   await app.listen(process.env.PORT ?? 3003);
