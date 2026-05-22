@@ -61,14 +61,16 @@ export class AuthController {
   async googleAuthRedirect(@Req() req, @Res() res) {
     const result = await this.authService.validateSocialUser(req.user);
 
-    res.cookie('accessToken', result.access_token, {
-      httpOnly: true,
-      secure: true, // Set to true only in production (HTTPS)
-      sameSite: 'none', // Crucial for redirects between :3003 and :3000
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: '/',
-    });
+    // res.cookie('accessToken', result.access_token, {
+    //   httpOnly: true,
+    //   secure: true, // Set to true only in production (HTTPS)
+    //   sameSite: 'none', // Crucial for redirects between :3003 and :3000
+    //   maxAge: 7 * 24 * 60 * 60 * 1000,
+    //   path: '/',
+    // });
 
-    return res.redirect(`${process.env.FRONTEND_URL}/${result.role}/dashboard`);
+    return res.redirect(
+      `${process.env.FRONTEND_URL}/api/auth-success?token=${result.access_token}&role=${result.role}`
+    );
   }
 }
