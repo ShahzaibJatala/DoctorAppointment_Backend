@@ -21,6 +21,9 @@ export class MedicalRecord {
   @Prop()
   reasonForVisit!: string;
 
+  @Prop({ type: [String], default: [] })
+  reports?: string[];
+
   @Prop({ enum: ['Upcomming', 'Completed', 'Cancelled'], default: 'Upcomming' })
   appointmentStatus?: string;
 }

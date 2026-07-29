@@ -14,7 +14,7 @@ export class UserAuth extends Document {
   @Prop({
     required: true,
     type: String,
-    enum: ['patient', 'doctor', 'admin'],
+    enum: ['patient', 'doctor', 'admin', 'compounder'],
     default: 'patient',
   })
   role!: string;

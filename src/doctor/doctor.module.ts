@@ -19,6 +19,6 @@ import { PatientModule } from 'src/patient/patient.module';
   })],
   providers: [DoctorService, JwtStrategy, CloudinaryService],
   controllers: [DoctorController, ImageController],
-
+  exports: [CloudinaryService, DoctorService]
 })
-export class DoctorModule { }
+export class DoctorModule {}

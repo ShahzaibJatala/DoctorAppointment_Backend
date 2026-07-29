@@ -1,4 +1,5 @@
 import { Doctor } from 'src/doctor/schemas/doctor.schema/doctor.schema';
+import { PatientsOfDoctor } from 'src/doctor/schemas/patients-of-doctor.schema/patients-of-doctor.schema';
 import {
   Injectable,
   NotFoundException,
@@ -14,6 +15,7 @@ export class PatientService {
   constructor(
     @InjectModel(Patient.name) private patientModel: Model<Patient>,
     @InjectModel(Doctor.name) private doctorModel: Model<Doctor>,
+    @InjectModel(PatientsOfDoctor.name) private patientsOfDoctor: Model<PatientsOfDoctor>,
   ) {}
 
   async createPatient(
@@ -122,6 +124,7 @@ export class PatientService {
       prescription: recordDto.prescription,
       reasonForVisit: recordDto.reasonForVisit,
       appointmentStatus: recordDto.appointmentStatus || 'Upcomming',
+      reports: recordDto.reports || [],
     };
 
     // Find the patient and $push the new record into their medicalRecords array
@@ -137,6 +140,98 @@ export class PatientService {
       throw new NotFoundException('Patient not found to add medical record.');
     }
 
+    // Also update the status of the corresponding appointment to 'completed'
+    await this.patientsOfDoctor.findOneAndUpdate(
+      { 
+        doctorId: doctor._id,
+        'appointments.patientId': new Types.ObjectId(patientId),
+        'appointments.status': { $ne: 'completed' }
+      },
+      {
+        $set: { 'appointments.$.status': 'completed' }
+      }
+    ).exec();
+
     return updatedPatient;
+  }
+
+  async getMyAppointments(patientUserId: string): Promise<any[]> {
+    const records = await this.patientsOfDoctor.find({
+      'appointments.patientId': new Types.ObjectId(patientUserId)
+    }).exec();
+
+    const appointmentsList: any[] = [];
+
+    for (const record of records) {
+      const doctor = await this.doctorModel.findById(record.doctorId).exec();
+      const doctorAppointments = record.appointments.filter(
+        (app) => app.patientId.toString() === patientUserId
+      );
+
+      for (const app of doctorAppointments) {
+        appointmentsList.push({
+          id: (app as any)._id ? (app as any)._id.toString() : undefined,
+          doctorName: doctor?.fullName || 'Doctor',
+          specialty: doctor?.specialization || 'Specialist',
+          avatar: doctor?.profilePictureUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(doctor?.fullName || 'D')}&background=0D9488&color=fff`,
+          date: app.startTime,
+          time: app.startTime,
+          endTime: app.endTime,
+          type: app.appointmentType,
+          status: app.status === 'confirmed' ? 'Confirmed' : app.status === 'pending' ? 'Pending' : app.status === 'cancelled' ? 'Cancelled' : app.status,
+          tokenNumber: (app as any).tokenNumber,
+        });
+      }
+    }
+
+    appointmentsList.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    return appointmentsList;
+  }
+
+  async addReportToRecord(patientUserId: string, recordId: string, fileUrl: string): Promise<Patient> {
+    const updated = await this.patientModel.findOneAndUpdate(
+      { 
+        userId: new Types.ObjectId(patientUserId),
+        'medicalRecords._id': new Types.ObjectId(recordId)
+      },
+      {
+        $push: { 'medicalRecords.$.reports': fileUrl }
+      },
+      { new: true }
+    ).exec();
+    if (!updated) {
+      throw new NotFoundException('Patient medical record not found.');
+    }
+    return updated;
+  }
+
+  async addReportToRecordAsDoctor(patientId: string, recordId: string, fileUrl: string): Promise<Patient> {
+    const updated = await this.patientModel.findOneAndUpdate(
+      { 
+        _id: new Types.ObjectId(patientId),
+        'medicalRecords._id': new Types.ObjectId(recordId)
+      },
+      {
+        $push: { 'medicalRecords.$.reports': fileUrl }
+      },
+      { new: true }
+    ).exec();
+    if (!updated) {
+      const updatedByUserId = await this.patientModel.findOneAndUpdate(
+        { 
+          userId: new Types.ObjectId(patientId),
+          'medicalRecords._id': new Types.ObjectId(recordId)
+        },
+        {
+          $push: { 'medicalRecords.$.reports': fileUrl }
+        },
+        { new: true }
+      ).exec();
+      if (!updatedByUserId) {
+        throw new NotFoundException('Patient medical record not found.');
+      }
+      return updatedByUserId;
+    }
+    return updated;
   }
 }

@@ -36,6 +36,23 @@ export class CloudinaryService {
             );
         });
     }
+
+    async uploadFile(
+        filePath: string,
+    ): Promise<UploadApiResponse> {
+        return new Promise((resolve, reject) => {
+            cloudinary.uploader.upload(
+                filePath,
+                { folder: 'patientReports', resource_type: 'raw' },
+                (error, result) => {
+                    if (error) {
+                        return reject(error);
+                    }
+                    resolve(result as UploadApiResponse);
+                },
+            );
+        });
+    }
 }
 
 

@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Doctor } from './schemas/doctor.schema/doctor.schema';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { CreateDoctorDto } from './dto/doctor.dto';
 import { UserAuth } from 'src/auth/user.schema';
 import { CloudinaryService } from './cloudinary.service';
@@ -14,12 +14,14 @@ import * as fs from 'fs/promises';
 import { PatientSeatDto } from './dto/patientSeat.dto';
 import { PatientsOfDoctor } from './schemas/patients-of-doctor.schema/patients-of-doctor.schema';
 import { PatientService } from 'src/patient/patient.service';
+import { Patient } from 'src/patient/schemas/patient.schema';
 
 @Injectable()
 export class DoctorService {
   constructor(
     @InjectModel(Doctor.name) private doctorModel: Model<Doctor>,
     @InjectModel(UserAuth.name) private userModel: Model<UserAuth>,
+    @InjectModel(Patient.name) private patientModel: Model<Patient>,
     private readonly cloudinaryService: CloudinaryService,
     private readonly patientService: PatientService,
     @InjectModel(PatientsOfDoctor.name)
@@ -105,7 +107,7 @@ export class DoctorService {
     patientId: string,
     patientSeatDto: PatientSeatDto,
   ): Promise<Doctor> {
-    const { doctorId, startTime, endTime, appointmentType, paymentMethod } =
+    const { doctorId, startTime, endTime, appointmentType, paymentMethod, mobileWalletNumber } =
       patientSeatDto;
 
     // 1. Validate Doctor and Patient exist
@@ -147,6 +149,7 @@ export class DoctorService {
             endTime,
             appointmentType, // ✅ new
             paymentMethod, // ✅ new
+            mobileWalletNumber, // ✅ new
             status: 'confirmed',
           },
         },
@@ -206,8 +209,8 @@ export class DoctorService {
 
     // 3. Remove duplicates to avoid fetching the same user multiple times from the DB
     const uniquePatientIds = [
-      ...new Set(doctorRecord.appointments.map((app) => app.patientId)),
-    ];
+      ...new Set(doctorRecord.appointments.map((app) => app.patientId.toString())),
+    ].map(id => new Types.ObjectId(id));
 
     // 4. Fetch the patients securely
     const patients = await this.userModel
@@ -218,6 +221,12 @@ export class DoctorService {
       .lean() // 👈 CRITICAL UPDATE: .lean() strips Mongoose metadata and returns a plain JavaScript object
       .exec();
 
+    // 4b. Fetch the Patient profiles (medicalRecords with reports) for each unique patient
+    const patientProfiles = await this.patientModel
+      .find({ userId: { $in: uniquePatientIds } })
+      .lean()
+      .exec();
+
     // 5. Merge the appointment times with the patient profiles
     const appointmentsWithPatientDetails = doctorRecord.appointments.map(
       (appointment) => {
@@ -226,15 +235,61 @@ export class DoctorService {
           (p) => p._id.toString() === appointment.patientId.toString(),
         );
 
+        // Find the matching Patient document (has medicalRecords/reports)
+        const patientDoc = patientProfiles.find(
+          (p: any) => p.userId?.toString() === appointment.patientId.toString(),
+        );
+
+        // Filter the medical records to only return those belonging to this specific doctor
+        const filteredMedicalRecords = patientDoc 
+          ? (patientDoc as any).medicalRecords.filter((rec: any) => 
+              rec.doctorId?.toString() === actualDoctorId || 
+              rec.doctorId?.toString() === doctorProfile.userId?.toString()
+            )
+          : [];
+
         // Return a new object containing everything
         return {
           ...patientProfile,
+          appointmentId: (appointment as any)._id ? (appointment as any)._id.toString() : undefined,
           startTime: appointment.startTime,
           endTime: appointment.endTime,
+          appointmentType: appointment.appointmentType,
+          paymentMethod: appointment.paymentMethod,
+          status: appointment.status,
+          tokenNumber: (appointment as any).tokenNumber,
+          mobileWalletNumber: (appointment as any).mobileWalletNumber,
+          medicalRecords: filteredMedicalRecords,
+          patientDocId: patientDoc ? (patientDoc as any)._id?.toString() : undefined,
         };
       },
     );
 
     return appointmentsWithPatientDetails;
+  }
+
+  async updateAppointmentStatus(appointmentId: string, status: string): Promise<any> {
+    const { Types } = require('mongoose');
+    const updated = await this.patientsOfDoctor.findOneAndUpdate(
+      { 'appointments._id': new Types.ObjectId(appointmentId) },
+      { $set: { 'appointments.$.status': status } },
+      { new: true }
+    );
+    if (!updated) {
+      throw new NotFoundException('Appointment not found.');
+    }
+    return updated;
+  }
+
+  async updateAvailability(userId: string, availability: any[]): Promise<Doctor> {
+    const doctor = await this.doctorModel.findOneAndUpdate(
+      { userId: userId },
+      { $set: { availability } },
+      { new: true, runValidators: true }
+    );
+    if (!doctor) {
+      throw new NotFoundException('Doctor profile not found.');
+    }
+    return doctor;
   }
 }

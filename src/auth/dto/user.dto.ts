@@ -18,7 +18,7 @@ export class UserDto{
 
     @IsString()
     @IsOptional()
-    @IsIn(['patient', 'doctor', 'admin']) 
+    @IsIn(['patient', 'doctor', 'admin', 'compounder']) 
     role?: string;
 
 }

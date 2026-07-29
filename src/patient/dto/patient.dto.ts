@@ -48,4 +48,8 @@ export class AddMedicalRecordDto {
   @IsOptional()
   @IsEnum(['Upcomming', 'Completed', 'Cancelled'])
   appointmentStatus?: string;
+
+  @IsOptional()
+  @IsArray()
+  reports?: string[];
 }

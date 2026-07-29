@@ -15,11 +15,17 @@ class Appointment {
   @Prop({ required: true, enum: ['Clinic', 'Online'], default: 'Clinic' })
   appointmentType!: string;
 
-  @Prop({ required: true, enum: ['card', 'cash'], default: 'cash' })
+  @Prop({ required: true, enum: ['card', 'cash', 'easypaisa', 'jazzcash'], default: 'cash' })
   paymentMethod!: string;
 
-  @Prop({ default: 'pending', enum: ['pending', 'confirmed', 'cancelled'] })
+  @Prop({ default: 'pending', enum: ['pending', 'confirmed', 'cancelled', 'checked-in', 'in-progress'] })
   status!: string;
+
+  @Prop()
+  tokenNumber?: number;
+
+  @Prop()
+  mobileWalletNumber?: string;
 }
 
 const AppointmentSchema = SchemaFactory.createForClass(Appointment);
