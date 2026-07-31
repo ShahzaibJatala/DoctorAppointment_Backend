@@ -50,6 +50,9 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('Invalid email or password');
     }
+    if (user.status === 'Suspended') {
+      throw new UnauthorizedException('Your account has been suspended.');
+    }
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       throw new UnauthorizedException('Invalid email or password');
@@ -65,6 +68,10 @@ export class AuthService {
   async validateSocialUser(details: any) {
   // 1. Check if the user already exists in the database
   let user = await this.userModel.findOne({ email: details.email });
+
+  if (user && user.status === 'Suspended') {
+    throw new UnauthorizedException('Your account has been suspended.');
+  }
 
   // 2. If the user does NOT exist, create a new one
   if (!user) {

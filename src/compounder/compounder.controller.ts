@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Request, UseGuards } from '@nestjs/common';
 import { CompounderService } from './compounder.service';
 import { CreateCompounderDto } from './dto/create-compounder.dto';
 import { AuthGuard } from '@nestjs/passport';
@@ -66,5 +66,21 @@ export class CompounderController {
   ) {
     const compounderUserId = req.user.userId;
     return this.compounderService.bookWalkIn(compounderUserId, body);
+  }
+
+  @UseGuards(AuthGuard('jwt'), RoleGuard)
+  @Roles(Role.Doctor)
+  @Post('suspend/:id')
+  async suspendCompounder(@Request() req, @Param('id') compounderId: string) {
+    const doctorUserId = req.user.userId;
+    return this.compounderService.suspendCompounder(doctorUserId, compounderId);
+  }
+
+  @UseGuards(AuthGuard('jwt'), RoleGuard)
+  @Roles(Role.Doctor)
+  @Delete(':id')
+  async deleteCompounder(@Request() req, @Param('id') compounderId: string) {
+    const doctorUserId = req.user.userId;
+    return this.compounderService.deleteCompounder(doctorUserId, compounderId);
   }
 }

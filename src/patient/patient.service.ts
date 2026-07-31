@@ -157,7 +157,18 @@ export class PatientService {
 
   async getMyAppointments(patientUserId: string): Promise<any[]> {
     const records = await this.patientsOfDoctor.find({
-      'appointments.patientId': new Types.ObjectId(patientUserId)
+      $expr: {
+        $in: [
+          patientUserId,
+          {
+            $map: {
+              input: '$appointments',
+              as: 'appointment',
+              in: { $toString: '$$appointment.patientId' },
+            },
+          },
+        ],
+      },
     }).exec();
 
     const appointmentsList: any[] = [];
@@ -233,5 +244,20 @@ export class PatientService {
       return updatedByUserId;
     }
     return updated;
+  }
+
+  async getDoctorAppointments(doctorId: string): Promise<any[]> {
+    const record = await this.patientsOfDoctor.findOne({ doctorId }).exec();
+    if (!record || !record.appointments) {
+      return [];
+    }
+    // Return only necessary non-cancelled slot times for security/privacy
+    return record.appointments
+      .filter(app => app.status !== 'cancelled')
+      .map(app => ({
+        startTime: app.startTime,
+        endTime: app.endTime,
+        status: app.status,
+      }));
   }
 }

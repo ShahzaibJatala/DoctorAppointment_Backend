@@ -27,7 +27,9 @@ export class UserAuth extends Document {
   
   @Prop({type: Boolean, default: false})
   isOtpVerified!: boolean;
-    
+
+  @Prop({ default: 'Active', enum: ['Active', 'Suspended'] })
+  status!: string;
 }
 
 export const UserSchema = SchemaFactory.createForClass(UserAuth);

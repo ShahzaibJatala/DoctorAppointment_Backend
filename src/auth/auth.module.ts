@@ -7,21 +7,32 @@ import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { MailModule } from 'src/mail/mail.module';
+import { ThrottlerModule } from '@nestjs/throttler';
+
 
 @Module({
-  imports:[MongooseModule.forFeature([{ name: UserAuth.name, schema: UserSchema }]),
-  JwtModule.registerAsync({
-    imports: [ConfigModule],
-    inject: [ConfigService],
-    useFactory: (config: ConfigService) => ({
-      secret: config.get<string>('MY_JWT_SECRET'),
-      signOptions: {expiresIn: '7d'}
-    })
-  }),
-  MailModule,
-],
-  providers: [AuthService,GoogleStrategy],
+  imports: [
+    MongooseModule.forFeature([{ name: UserAuth.name, schema: UserSchema }]),
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        secret: config.get<string>('MY_JWT_SECRET'),
+        signOptions: { expiresIn: '7d' },
+      }),
+    }),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,
+        limit: 5,
+      },
+    ]),
+    MailModule,
+  ],
+  providers: [
+    AuthService,
+    GoogleStrategy,
+  ],
   controllers: [AuthController],
-  
 })
 export class AuthModule {}

@@ -79,6 +79,9 @@ export class Doctor extends Document {
   @Prop()
   consultationFee!: number;
 
+  @Prop({ default: true })
+  isVideoEnabled?: boolean;
+
   // 📅 Availability (Array of Slots)
   @Prop({ type: [AvailabilitySchema], default: [] })
   availability!: AvailabilitySlot[];
@@ -96,6 +99,18 @@ export class Doctor extends Document {
 
   @Prop()
   documentFileUrl!: string; // For Cloudinary
+
+  @Prop()
+  bankName?: string;
+
+  @Prop()
+  accountHolderName?: string;
+
+  @Prop()
+  accountNumber?: string;
+
+  @Prop({ default: false })
+  isVerified?: boolean;
 }
 
 export const DoctorSchema = SchemaFactory.createForClass(Doctor);

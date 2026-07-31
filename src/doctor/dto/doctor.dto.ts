@@ -73,6 +73,19 @@ export class CreateDoctorDto {
   @Type(() => Number)
   consultationFee?: number;
 
+  // Bank Account Details
+  @IsString()
+  @IsOptional()
+  bankName?: string;
+
+  @IsString()
+  @IsOptional()
+  accountHolderName?: string;
+
+  @IsString()
+  @IsOptional()
+  accountNumber?: string;
+
   // Note: Profile Picture and Document URLs are usually handled directly in the service
   // during the file upload process, so they are often excluded from the creation DTO.
 }

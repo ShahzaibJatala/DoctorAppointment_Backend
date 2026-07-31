@@ -32,11 +32,15 @@ export class PatientSeatDto {
 //   reasonForVisit: string;
 
   @IsString()
-  @IsIn(['card', 'cash', 'easypaisa', 'jazzcash'])
+  @IsIn(['card', 'cash', 'easypaisa', 'jazzcash', 'bank_transfer'])
   @IsNotEmpty()
-  paymentMethod: 'card' | 'cash' | 'easypaisa' | 'jazzcash';
+  paymentMethod: 'card' | 'cash' | 'easypaisa' | 'jazzcash' | 'bank_transfer';
 
   @IsString()
   @IsOptional()
   mobileWalletNumber?: string;
+
+  @IsString()
+  @IsOptional()
+  bankTransferReceiptUrl?: string;
 }

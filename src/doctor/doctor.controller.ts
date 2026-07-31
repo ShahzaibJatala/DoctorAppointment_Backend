@@ -55,8 +55,20 @@ export class DoctorController {
   @UseGuards(AuthGuard('jwt'), RoleGuard)
   @Roles(Role.Doctor)
   @Post('updateAvailability')
-  async updateAvailability(@Request() req, @Body('availability') availability: any[]) {
+  async updateAvailability(
+    @Request() req,
+    @Body('availability') availability: any[],
+    @Body('isVideoEnabled') isVideoEnabled?: boolean
+  ) {
     const user_id = req.user.userId;
-    return this.doctorService.updateAvailability(user_id, availability);
+    return this.doctorService.updateAvailability(user_id, availability, isVideoEnabled);
+  }
+
+  // Allow any authenticated user (patient) to upload a bank transfer receipt screenshot
+  @UseGuards(AuthGuard('jwt'))
+  @Post('uploadReceipt')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadReceipt(@UploadedFile() file: Express.Multer.File) {
+    return this.doctorService.uploadReceiptImage(file);
   }
 }

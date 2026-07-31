@@ -53,6 +53,19 @@ export class CloudinaryService {
             );
         });
     }
+
+    async uploadPaymentReceipt(filePath: string): Promise<UploadApiResponse> {
+        return new Promise((resolve, reject) => {
+            cloudinary.uploader.upload(
+                filePath,
+                { folder: 'paymentReceipts', resource_type: 'image' },
+                (error, result) => {
+                    if (error) return reject(error);
+                    resolve(result as UploadApiResponse);
+                },
+            );
+        });
+    }
 }
 
 

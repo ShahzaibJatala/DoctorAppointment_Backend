@@ -15,6 +15,7 @@ import { PatientSeatDto } from './dto/patientSeat.dto';
 import { PatientsOfDoctor } from './schemas/patients-of-doctor.schema/patients-of-doctor.schema';
 import { PatientService } from 'src/patient/patient.service';
 import { Patient } from 'src/patient/schemas/patient.schema';
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
 export class DoctorService {
@@ -26,6 +27,7 @@ export class DoctorService {
     private readonly patientService: PatientService,
     @InjectModel(PatientsOfDoctor.name)
     private readonly patientsOfDoctor: Model<PatientsOfDoctor>,
+    private readonly realtimeService: RealtimeService,
   ) {}
 
   async createDoctor(
@@ -79,9 +81,13 @@ export class DoctorService {
       updateData.profilePictureUrl = profilePictureUrl;
     }
 
+    const existingDoctor = await this.doctorModel.findOne({
+      userId: { $in: [userId, new Types.ObjectId(userId)] }
+    });
+
     // 4. Upsert: Update if it exists, create if it doesn't
     const savedDoctor = await this.doctorModel.findOneAndUpdate(
-      { userId: userId }, // The search query (find by userId)
+      { _id: existingDoctor ? existingDoctor._id : new Types.ObjectId() },
       { $set: updateData }, // The new data to apply
       {
         returnDocument: 'after', // Return the updated document
@@ -94,7 +100,9 @@ export class DoctorService {
   }
 
   async getDoctorProfile(userId: string): Promise<Doctor> {
-    const doctorProfile = await this.doctorModel.findOne({ userId: userId });
+    const doctorProfile = await this.doctorModel.findOne({
+      userId: { $in: [userId, new Types.ObjectId(userId)] }
+    });
 
     if (!doctorProfile) {
       throw new NotFoundException('Doctor profile not found for this user.');
@@ -107,8 +115,19 @@ export class DoctorService {
     patientId: string,
     patientSeatDto: PatientSeatDto,
   ): Promise<Doctor> {
-    const { doctorId, startTime, endTime, appointmentType, paymentMethod, mobileWalletNumber } =
-      patientSeatDto;
+    const {
+      doctorId,
+      startTime,
+      endTime,
+      appointmentType,
+      paymentMethod,
+      mobileWalletNumber,
+      bankTransferReceiptUrl,
+    } = patientSeatDto;
+
+    if (paymentMethod === 'bank_transfer' && !bankTransferReceiptUrl) {
+      throw new BadRequestException('A bank transfer receipt screenshot is required.');
+    }
 
     // 1. Validate Doctor and Patient exist
     const doctor = await this.doctorModel.findById(doctorId);
@@ -139,23 +158,56 @@ export class DoctorService {
     await this.patientService.createPatient(email, _id);
 
     // 5. Push appointment with all fields from frontend
-    await this.patientsOfDoctor.findOneAndUpdate(
+    const updatedDoctorRecord = await this.patientsOfDoctor.findOneAndUpdate(
       { doctorId },
       {
         $push: {
           appointments: {
-            patientId,
+            patientId: new Types.ObjectId(patientId),
             startTime,
             endTime,
             appointmentType, // ✅ new
             paymentMethod, // ✅ new
             mobileWalletNumber, // ✅ new
+            bankTransferReceiptUrl,
             status: 'confirmed',
           },
         },
       },
       { returnDocument: 'after', upsert: true },
     );
+
+    if (paymentMethod === 'bank_transfer' && bankTransferReceiptUrl) {
+      const appointment = updatedDoctorRecord?.appointments
+        .filter((item) => item.patientId.toString() === patientId)
+        .at(-1) as any;
+
+      if (!appointment?._id) {
+        throw new BadRequestException('Could not save the payment receipt.');
+      }
+
+      await this.patientModel.findOneAndUpdate(
+        { userId: new Types.ObjectId(patientId) },
+        {
+          $push: {
+            paymentReceipts: {
+              doctorId: new Types.ObjectId(doctorId),
+              appointmentId: appointment._id,
+              url: bankTransferReceiptUrl,
+              paymentMethod: 'bank_transfer',
+            },
+          },
+        },
+      );
+    }
+
+    // Emit realtime event
+    this.realtimeService.emit('appointment_booked', {
+      doctorId,
+      startTime,
+      endTime,
+      status: 'confirmed',
+    });
 
     return doctor;
   }
@@ -183,13 +235,26 @@ export class DoctorService {
   // }
 
   async getPatientsOfDoctor(userIdFromToken: string): Promise<any[]> {
-    // 1. Find the Doctor Profile that belongs to this logged-in User
-    const doctorProfile = await this.doctorModel
-      .findOne({ userId: userIdFromToken })
+    // 1. Find the Doctor Profile that belongs to this logged-in User or auto-create it
+    let doctorProfile = await this.doctorModel
+      .findOne({ userId: { $in: [userIdFromToken, new Types.ObjectId(userIdFromToken)] } })
       .exec();
 
     if (!doctorProfile) {
-      throw new BadRequestException('Doctor is not found.');
+      const user = await this.userModel.findById(userIdFromToken);
+      if (!user) {
+        throw new NotFoundException('Doctor user account not found.');
+      }
+      doctorProfile = new this.doctorModel({
+        userId: new Types.ObjectId(userIdFromToken),
+        fullName: user.name || 'Dr. ' + (user.email.split('@')[0]),
+        email: user.email,
+        phoneNumber: '03001234567',
+        specialization: 'General Practice',
+        experienceYears: 1,
+        availability: [],
+      });
+      await doctorProfile.save();
     }
 
     const actualDoctorId = doctorProfile._id.toString();
@@ -259,6 +324,7 @@ export class DoctorService {
           status: appointment.status,
           tokenNumber: (appointment as any).tokenNumber,
           mobileWalletNumber: (appointment as any).mobileWalletNumber,
+          bankTransferReceiptUrl: (appointment as any).bankTransferReceiptUrl,
           medicalRecords: filteredMedicalRecords,
           patientDocId: patientDoc ? (patientDoc as any)._id?.toString() : undefined,
         };
@@ -278,18 +344,63 @@ export class DoctorService {
     if (!updated) {
       throw new NotFoundException('Appointment not found.');
     }
+    const appObj = updated.appointments.find((a: any) => a._id.toString() === appointmentId);
+    if (appObj) {
+      this.realtimeService.emit('appointment_updated', {
+        doctorId: updated.doctorId,
+        startTime: appObj.startTime,
+        endTime: appObj.endTime,
+        status: appObj.status,
+        appointmentId: (appObj as any)._id.toString(),
+      });
+    }
     return updated;
   }
 
-  async updateAvailability(userId: string, availability: any[]): Promise<Doctor> {
+  async updateAvailability(userId: string, availability: any[], isVideoEnabled?: boolean): Promise<Doctor> {
+    const existingDoctor = await this.doctorModel.findOne({
+      userId: { $in: [userId, new Types.ObjectId(userId)] }
+    });
+    if (!existingDoctor) {
+      throw new NotFoundException('Doctor profile not found.');
+    }
+    const updatePayload: any = { availability };
+    if (isVideoEnabled !== undefined) {
+      updatePayload.isVideoEnabled = isVideoEnabled;
+    }
     const doctor = await this.doctorModel.findOneAndUpdate(
-      { userId: userId },
-      { $set: { availability } },
+      { _id: existingDoctor._id },
+      { $set: updatePayload },
       { new: true, runValidators: true }
     );
     if (!doctor) {
       throw new NotFoundException('Doctor profile not found.');
     }
+    this.realtimeService.emit('availability_updated', {
+      doctorId: doctor._id,
+      availability,
+      isVideoEnabled: doctor.isVideoEnabled !== false,
+    });
     return doctor;
+  }
+
+  async uploadReceiptImage(file: Express.Multer.File): Promise<{ url: string }> {
+    if (!file) {
+      throw new BadRequestException('No file uploaded.');
+    }
+    if (!file.mimetype?.startsWith('image/')) {
+      throw new BadRequestException('The receipt must be an image.');
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      throw new BadRequestException('The receipt image must be 5 MB or smaller.');
+    }
+    try {
+      const result = await this.cloudinaryService.uploadPaymentReceipt(file.path);
+      return { url: result.secure_url };
+    } finally {
+      if (file?.path) {
+        await fs.unlink(file.path).catch(err => console.error('Error deleting temp file:', err));
+      }
+    }
   }
 }

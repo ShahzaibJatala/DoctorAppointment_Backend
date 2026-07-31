@@ -1,4 +1,14 @@
-import { Controller, Post, Body, Res, Req, Get, Param, UseGuards, Request } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Res,
+  Req,
+  Get,
+  Param,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
 import Stripe from 'stripe';
 import { AuthGuard } from '@nestjs/passport';
 import { RoleGuard } from '../guards/role/role.guard';
@@ -28,7 +38,8 @@ export class StripeController {
   async createCheckoutSession(@Request() req, @Body() body, @Res() res) {
     try {
       const patientUserId = req.user.userId;
-      const { doctorId, startTime, endTime, appointmentType, consultationFee } = body;
+      const { doctorId, startTime, endTime, appointmentType, consultationFee } =
+        body;
 
       const origin = req.headers.origin || 'http://localhost:3000';
 
@@ -68,7 +79,10 @@ export class StripeController {
   @UseGuards(AuthGuard('jwt'), RoleGuard)
   @Roles(Role.Patient)
   @Get('verify-checkout-session/:sessionId')
-  async verifyCheckoutSession(@Param('sessionId') sessionId: string, @Res() res) {
+  async verifyCheckoutSession(
+    @Param('sessionId') sessionId: string,
+    @Res() res,
+  ) {
     try {
       // 1. Retrieve session from Stripe
       const session = await this.stripe.checkout.sessions.retrieve(sessionId);
@@ -77,9 +91,12 @@ export class StripeController {
       }
 
       // 2. Extract metadata
-      const { doctorId, startTime, endTime, appointmentType, patientUserId } = session.metadata || {};
+      const { doctorId, startTime, endTime, appointmentType, patientUserId } =
+        session.metadata || {};
       if (!doctorId || !startTime || !endTime) {
-        return res.status(400).json({ error: 'Invalid checkout session metadata.' });
+        return res
+          .status(400)
+          .json({ error: 'Invalid checkout session metadata.' });
       }
 
       // 3. Register booking on DB
@@ -91,7 +108,10 @@ export class StripeController {
         paymentMethod: 'card',
       } as any);
 
-      return res.json({ success: true, message: 'Payment verified and appointment booked!' });
+      return res.json({
+        success: true,
+        message: 'Payment verified and appointment booked!',
+      });
     } catch (error: any) {
       console.error('Stripe verification error:', error);
       return res.status(500).json({ error: error.message });
@@ -107,7 +127,8 @@ export class StripeController {
   async initiateJazzCash(@Request() req, @Body() body, @Res() res) {
     try {
       const patientUserId = req.user.userId;
-      const { doctorId, startTime, endTime, appointmentType, consultationFee } = body;
+      const { doctorId, startTime, endTime, appointmentType, consultationFee } =
+        body;
       const origin = req.headers.origin || 'http://localhost:3000';
 
       const merchantId = process.env.JAZZCASH_MERCHANT_ID;
@@ -156,14 +177,18 @@ export class StripeController {
           valueString += '&' + params[key];
         }
       }
-      const secureHash = crypto.createHmac('sha256', integritySalt).update(valueString).digest('hex').toUpperCase();
+      const secureHash = crypto
+        .createHmac('sha256', integritySalt)
+        .update(valueString)
+        .digest('hex')
+        .toUpperCase();
       params['pp_SecureHash'] = secureHash;
 
       // Returns the redirect payload
       return res.json({
         url: 'https://sandbox.jazzcash.com.pk/CustomerPortal/transactionmanagement/merchantform',
         fields: params,
-        mock: false
+        mock: false,
       });
     } catch (error: any) {
       console.error('JazzCash initiate error:', error);
@@ -175,13 +200,18 @@ export class StripeController {
   @UseGuards(AuthGuard('jwt'), RoleGuard)
   @Roles(Role.Patient)
   @Post('jazzcash/verify-mock')
-  async verifyMockJazzCash(@Request() req, @Body('description') description: string, @Res() res) {
+  async verifyMockJazzCash(
+    @Request() req,
+    @Body('description') description: string,
+    @Res() res,
+  ) {
     try {
       const parts = description.split('|');
       if (parts[0] !== 'JC') {
         return res.status(400).json({ error: 'Invalid description prefix.' });
       }
-      const [_, doctorId, startTime, endTime, appointmentType, patientUserId] = parts;
+      const [_, doctorId, startTime, endTime, appointmentType, patientUserId] =
+        parts;
 
       await this.doctorService.addPatientToDoctor(patientUserId, {
         doctorId,
@@ -191,7 +221,10 @@ export class StripeController {
         paymentMethod: 'jazzcash',
       } as any);
 
-      return res.json({ success: true, message: 'Mock JazzCash booking created successfully!' });
+      return res.json({
+        success: true,
+        message: 'Mock JazzCash booking created successfully!',
+      });
     } catch (error: any) {
       console.error('JazzCash mock verify error:', error);
       return res.status(500).json({ error: error.message });
@@ -207,7 +240,8 @@ export class StripeController {
   async initiateEasyPaisa(@Request() req, @Body() body, @Res() res) {
     try {
       const patientUserId = req.user.userId;
-      const { doctorId, startTime, endTime, appointmentType, consultationFee } = body;
+      const { doctorId, startTime, endTime, appointmentType, consultationFee } =
+        body;
       const origin = req.headers.origin || 'http://localhost:3000';
 
       const storeId = process.env.EASYPAISA_STORE_ID;
@@ -229,7 +263,9 @@ export class StripeController {
         amount: Number(consultationFee).toFixed(2),
         postBackURL: `${origin}/api/payment/easypaisa/callback`,
         orderRefNum: orderId,
-        expiryDate: this.formatDateEP(new Date(Date.now() + 24 * 60 * 60 * 1000)),
+        expiryDate: this.formatDateEP(
+          new Date(Date.now() + 24 * 60 * 60 * 1000),
+        ),
         merchantConfirmPageUrl: `${origin}/patient/appointments?status=success`,
       };
 
@@ -241,7 +277,11 @@ export class StripeController {
       }
       valueString = valueString.slice(0, -1);
 
-      const cipher = crypto.createCipheriv('aes-128-ecb', Buffer.from(hashKey.slice(0, 16)), null);
+      const cipher = crypto.createCipheriv(
+        'aes-128-ecb',
+        Buffer.from(hashKey.slice(0, 16)),
+        null,
+      );
       let encrypted = cipher.update(valueString, 'utf8', 'hex');
       encrypted += cipher.final('hex');
 
@@ -250,9 +290,9 @@ export class StripeController {
         fields: {
           ...params,
           transactionRefNumber: orderId,
-          hash: encrypted.toUpperCase()
+          hash: encrypted.toUpperCase(),
         },
-        mock: false
+        mock: false,
       });
     } catch (error: any) {
       console.error('EasyPaisa initiate error:', error);
@@ -264,13 +304,18 @@ export class StripeController {
   @UseGuards(AuthGuard('jwt'), RoleGuard)
   @Roles(Role.Patient)
   @Post('easypaisa/verify-mock')
-  async verifyMockEasyPaisa(@Request() req, @Body('description') description: string, @Res() res) {
+  async verifyMockEasyPaisa(
+    @Request() req,
+    @Body('description') description: string,
+    @Res() res,
+  ) {
     try {
       const parts = description.split('|');
       if (parts[0] !== 'EP') {
         return res.status(400).json({ error: 'Invalid description prefix.' });
       }
-      const [_, doctorId, startTime, endTime, appointmentType, patientUserId] = parts;
+      const [_, doctorId, startTime, endTime, appointmentType, patientUserId] =
+        parts;
 
       await this.doctorService.addPatientToDoctor(patientUserId, {
         doctorId,
@@ -280,7 +325,10 @@ export class StripeController {
         paymentMethod: 'easypaisa',
       } as any);
 
-      return res.json({ success: true, message: 'Mock EasyPaisa booking created successfully!' });
+      return res.json({
+        success: true,
+        message: 'Mock EasyPaisa booking created successfully!',
+      });
     } catch (error: any) {
       console.error('EasyPaisa mock verify error:', error);
       return res.status(500).json({ error: error.message });

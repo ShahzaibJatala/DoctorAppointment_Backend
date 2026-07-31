@@ -29,6 +29,22 @@ export class MedicalRecord {
 }
 export const MedicalRecordSchema = SchemaFactory.createForClass(MedicalRecord);
 
+@Schema({ _id: true, timestamps: true })
+export class PaymentReceipt {
+  @Prop({ type: Types.ObjectId, ref: 'Doctor', required: true })
+  doctorId!: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, required: true })
+  appointmentId!: Types.ObjectId;
+
+  @Prop({ required: true })
+  url!: string;
+
+  @Prop({ required: true, enum: ['bank_transfer'], default: 'bank_transfer' })
+  paymentMethod!: string;
+}
+export const PaymentReceiptSchema = SchemaFactory.createForClass(PaymentReceipt);
+
 // ------------------------------------------------------
 // 2. Main Schema: The Patient Profile
 // ------------------------------------------------------
@@ -67,6 +83,9 @@ export class Patient extends Document {
   // 📁 The "File": Array of all reports written by doctors
   @Prop({ type: [MedicalRecordSchema], default: [] })
   medicalRecords?: MedicalRecord[];
+
+  @Prop({ type: [PaymentReceiptSchema], default: [] })
+  paymentReceipts?: PaymentReceipt[];
 }
 
 export const PatientSchema = SchemaFactory.createForClass(Patient);

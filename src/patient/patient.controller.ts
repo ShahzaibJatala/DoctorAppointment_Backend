@@ -116,6 +116,12 @@ export class PatientController {
     return this.patientService.getAllDoctors();
   }
 
+  @UseGuards(AuthGuard('jwt'))
+  @Get('doctor-appointments/:doctorId')
+  async getDoctorAppointments(@Param('doctorId') doctorId: string) {
+    return this.patientService.getDoctorAppointments(doctorId);
+  }
+
   @Get(':id')
   async getPatientById(@Param('id') id: string): Promise<Patient | null> {
     return this.patientService.getPatientById(id);

@@ -11,9 +11,10 @@ import { AuthService } from './auth.service';
 import { ResetPasswordDto, SendOtpDto, UserDto, VerifyOtpDto } from './dto/user.dto';
 import { UserInterface } from './interfaces/user.interface';
 import { AuthGuard } from '@nestjs/passport';
-import { Throttle } from '@nestjs/throttler';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 
 @Controller('auth')
+@UseGuards(ThrottlerGuard)
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
