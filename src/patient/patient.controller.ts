@@ -1,10 +1,12 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   Get,
   Param,
   Post,
   Put,
+  Query,
   Req,
   UseGuards,
   UseInterceptors,
@@ -21,6 +23,13 @@ import { Roles } from 'src/guards/role/role.decorators';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CloudinaryService } from 'src/doctor/cloudinary.service';
 import * as fs from 'fs/promises';
+
+function validatePdf(file: Express.Multer.File) {
+  const isPdf = file.mimetype === 'application/pdf' && file.originalname.toLowerCase().endsWith('.pdf');
+  if (!isPdf) {
+    throw new BadRequestException('Only PDF report files are allowed.');
+  }
+}
 
 @Controller('patient')
 export class PatientController {
@@ -49,6 +58,7 @@ export class PatientController {
     if (!file) {
       throw new Error('No file uploaded.');
     }
+    validatePdf(file);
     try {
       const result = await this.cloudinaryService.uploadFile(file.path);
       const patientUserId = req.user.userId;
@@ -71,6 +81,7 @@ export class PatientController {
     if (!file) {
       throw new Error('No file uploaded.');
     }
+    validatePdf(file);
     try {
       const result = await this.cloudinaryService.uploadFile(file.path);
       await this.patientService.addReportToRecordAsDoctor(patientId, recordId, result.secure_url);
@@ -90,6 +101,7 @@ export class PatientController {
     if (!file) {
       throw new Error('No file uploaded.');
     }
+    validatePdf(file);
     try {
       const result = await this.cloudinaryService.uploadFile(file.path);
       return { url: result.secure_url };
@@ -116,10 +128,40 @@ export class PatientController {
     return this.patientService.getAllDoctors();
   }
 
+  @Get('search-doctors')
+  async searchDoctors(
+    @Query('q') query = '',
+    @Query('location') location = '',
+    @Query('specialty') specialty = 'All',
+  ) {
+    return this.patientService.searchDoctors(query, location, specialty);
+  }
+
+  @Get('doctor-search-suggestions')
+  async getDoctorSearchSuggestions(@Query('q') query = '') {
+    return this.patientService.getDoctorSearchSuggestions(query);
+  }
+
   @UseGuards(AuthGuard('jwt'))
   @Get('doctor-appointments/:doctorId')
   async getDoctorAppointments(@Param('doctorId') doctorId: string) {
     return this.patientService.getDoctorAppointments(doctorId);
+  }
+
+  @UseGuards(AuthGuard('jwt'), RoleGuard)
+  @Roles(Role.Patient)
+  @Post('doctor-reviews/:doctorId')
+  async addDoctorReview(
+    @Req() req,
+    @Param('doctorId') doctorId: string,
+    @Body() body: { rating: number; comment: string },
+  ) {
+    return this.patientService.addDoctorReview(
+      doctorId,
+      req.user.userId,
+      Number(body.rating),
+      body.comment,
+    );
   }
 
   @Get(':id')

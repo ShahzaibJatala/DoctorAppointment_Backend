@@ -12,11 +12,50 @@ class Appointment {
   @Prop({ required: true })
   endTime!: Date;
 
-  @Prop({ required: true, enum: ['Clinic', 'Online'], default: 'Clinic' })
+  @Prop({ required: true, enum: ['Clinic', 'Video', 'Online'], default: 'Clinic' })
   appointmentType!: string;
 
   @Prop({ required: true, enum: ['card', 'cash', 'easypaisa', 'jazzcash', 'bank_transfer'], default: 'cash' })
   paymentMethod!: string;
+
+  @Prop({ enum: ['platform', 'whatsapp'], default: 'platform' })
+  videoConsultationMethod?: string;
+
+  @Prop({ enum: ['scheduled', 'ringing', 'active', 'paused', 'completed'], default: 'scheduled' })
+  videoCallStatus?: string;
+
+  @Prop()
+  videoStartedAt?: Date;
+
+  @Prop()
+  videoEndedAt?: Date;
+
+  @Prop()
+  videoRecordingUrl?: string;
+
+  @Prop()
+  videoPausedBy?: string;
+
+  @Prop()
+  videoCallEndsAt?: Date;
+
+  @Prop()
+  videoRemainingMs?: number;
+
+  @Prop()
+  videoRingingAt?: Date;
+
+  @Prop({ required: true })
+  patientName!: string;
+
+  @Prop({ required: true })
+  patientAge!: number;
+
+  @Prop({ required: true })
+  patientPhone!: string;
+
+  @Prop({ required: true })
+  patientGender!: string;
 
   @Prop({ default: 'pending', enum: ['pending', 'confirmed', 'cancelled', 'checked-in', 'in-progress'] })
   status!: string;

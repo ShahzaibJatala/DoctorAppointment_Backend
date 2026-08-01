@@ -10,7 +10,7 @@ import { PatientSeatDto } from './dto/patientSeat.dto';
 
 @Controller('doctor')
 export class DoctorController {
-  constructor(private readonly doctorService: DoctorService) { }
+  constructor(private readonly doctorService: DoctorService) {}
 
   @UseGuards(AuthGuard('jwt'), RoleGuard)
   @Roles(Role.Doctor)
@@ -58,10 +58,11 @@ export class DoctorController {
   async updateAvailability(
     @Request() req,
     @Body('availability') availability: any[],
-    @Body('isVideoEnabled') isVideoEnabled?: boolean
+    @Body('isVideoEnabled') isVideoEnabled?: boolean,
+    @Body('allowWhatsAppVideoConsultation') allowWhatsAppVideoConsultation?: boolean,
   ) {
     const user_id = req.user.userId;
-    return this.doctorService.updateAvailability(user_id, availability, isVideoEnabled);
+    return this.doctorService.updateAvailability(user_id, availability, isVideoEnabled, allowWhatsAppVideoConsultation);
   }
 
   // Allow any authenticated user (patient) to upload a bank transfer receipt screenshot
@@ -70,5 +71,16 @@ export class DoctorController {
   @UseInterceptors(FileInterceptor('file'))
   async uploadReceipt(@UploadedFile() file: Express.Multer.File) {
     return this.doctorService.uploadReceiptImage(file);
+  }
+  @UseGuards(AuthGuard('jwt'), RoleGuard)
+  @Roles(Role.Doctor)
+  @Post('video-recording/:appointmentId')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 250 * 1024 * 1024 },
+    }),
+  )
+  async uploadVideoRecording(@Request() req, @Param('appointmentId') appointmentId: string, @UploadedFile() file: Express.Multer.File) {
+    return this.doctorService.uploadConsultationRecording(req.user.userId, appointmentId, file);
   }
 }

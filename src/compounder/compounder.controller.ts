@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { CompounderService } from './compounder.service';
 import { CreateCompounderDto } from './dto/create-compounder.dto';
 import { AuthGuard } from '@nestjs/passport';
@@ -27,6 +27,45 @@ export class CompounderController {
   }
 
   @UseGuards(AuthGuard('jwt'), RoleGuard)
+  @Roles(Role.Doctor)
+  @Get('search')
+  async searchCompounders(@Request() req, @Query('q') query = '') {
+    return this.compounderService.searchCompounders(req.user.userId, query);
+  }
+
+  @UseGuards(AuthGuard('jwt'), RoleGuard)
+  @Roles(Role.Doctor)
+  @Post('invite/:compounderId')
+  async inviteCompounder(@Request() req, @Param('compounderId') compounderId: string) {
+    return this.compounderService.inviteCompounder(req.user.userId, compounderId);
+  }
+
+  @UseGuards(AuthGuard('jwt'), RoleGuard)
+  @Roles(Role.Compounder)
+  @Get('invitations')
+  async getInvitations(@Request() req) {
+    return this.compounderService.getInvitations(req.user.userId);
+  }
+
+  @UseGuards(AuthGuard('jwt'), RoleGuard)
+  @Roles(Role.Compounder)
+  @Post('invitations/:invitationId/respond')
+  async respondToInvitation(
+    @Request() req,
+    @Param('invitationId') invitationId: string,
+    @Body('accept') accept: boolean,
+  ) {
+    return this.compounderService.respondToInvitation(req.user.userId, invitationId, accept);
+  }
+
+  @UseGuards(AuthGuard('jwt'), RoleGuard)
+  @Roles(Role.Compounder)
+  @Get('doctors')
+  async getDoctors(@Request() req) {
+    return this.compounderService.getConnectedDoctors(req.user.userId);
+  }
+
+  @UseGuards(AuthGuard('jwt'), RoleGuard)
   @Roles(Role.Compounder)
   @Get('my-doctor')
   async getLinkedDoctor(@Request() req) {
@@ -37,17 +76,25 @@ export class CompounderController {
   @UseGuards(AuthGuard('jwt'), RoleGuard)
   @Roles(Role.Compounder)
   @Get('queue')
-  async getQueue(@Request() req) {
+  async getQueue(@Request() req, @Query('doctorId') doctorId?: string) {
     const compounderUserId = req.user.userId;
-    return this.compounderService.getQueueForToday(compounderUserId);
+    return this.compounderService.getQueueForToday(compounderUserId, doctorId);
   }
 
   @UseGuards(AuthGuard('jwt'), RoleGuard)
+
+  @UseGuards(AuthGuard('jwt'), RoleGuard)
+  @Roles(Role.Compounder)
+  @Get('bookings')
+  async getBookings(@Request() req, @Query('doctorId') doctorId?: string) {
+    return this.compounderService.getAllBookings(req.user.userId, doctorId);
+  }
+
   @Roles(Role.Compounder)
   @Post('check-in/:appointmentId')
-  async checkIn(@Request() req, @Param('appointmentId') appointmentId: string) {
+  async checkIn(@Request() req, @Param('appointmentId') appointmentId: string, @Query('doctorId') doctorId?: string) {
     const compounderUserId = req.user.userId;
-    return this.compounderService.checkInPatient(compounderUserId, appointmentId);
+    return this.compounderService.checkInPatient(compounderUserId, appointmentId, doctorId);
   }
 
   @UseGuards(AuthGuard('jwt'), RoleGuard)
@@ -60,12 +107,13 @@ export class CompounderController {
       fullName: string;
       age: number;
       phoneNumber: string;
+      doctorId?: string;
       gender: string;
       startTime: string;
     },
   ) {
     const compounderUserId = req.user.userId;
-    return this.compounderService.bookWalkIn(compounderUserId, body);
+    return this.compounderService.bookWalkIn(compounderUserId, body, body.doctorId);
   }
 
   @UseGuards(AuthGuard('jwt'), RoleGuard)

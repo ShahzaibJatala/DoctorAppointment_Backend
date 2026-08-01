@@ -65,6 +65,25 @@ export class CloudinaryService {
                 },
             );
         });
+
+    }
+    async uploadConsultationVideo(filePath: string): Promise<UploadApiResponse> {
+        return new Promise((resolve, reject) => {
+            cloudinary.uploader.upload(
+                filePath,
+                {
+                    folder: 'videoConsultations',
+                    resource_type: 'video',
+                    transformation: [
+                        { video_codec: 'h264', bit_rate: '800k', quality: 'auto:low' },
+                    ],
+                },
+                (error, result) => {
+                    if (error) return reject(error);
+                    resolve(result as UploadApiResponse);
+                },
+            );
+        });
     }
 }
 

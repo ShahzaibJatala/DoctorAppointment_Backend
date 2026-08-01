@@ -5,6 +5,7 @@ import {
   IsString,
   IsIn,
   IsOptional,
+  IsNumber,
 } from 'class-validator';
 
 export class PatientSeatDto {
@@ -23,9 +24,30 @@ export class PatientSeatDto {
   endTime: Date;
 
   @IsString()
-  @IsIn(['Clinic', 'Online'])
+  @IsIn(['Clinic', 'Video', 'Online'])
   @IsNotEmpty()
-  appointmentType: 'Clinic' | 'Online';
+  appointmentType: 'Clinic' | 'Video' | 'Online';
+
+  @IsString()
+  @IsOptional()
+  @IsString()
+  @IsIn(['platform', 'whatsapp'])
+  @IsOptional()
+  videoConsultationMethod?: 'platform' | 'whatsapp';
+
+  patientName?: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  patientAge?: number;
+
+  @IsString()
+  @IsOptional()
+  patientPhone?: string;
+
+  @IsString()
+  @IsOptional()
+  patientGender?: string;
 
 //   @IsString()
 //   @IsNotEmpty()

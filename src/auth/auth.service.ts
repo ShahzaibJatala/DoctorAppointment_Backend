@@ -23,7 +23,8 @@ import { MailService } from 'src/mail/mail.service';
 export class AuthService {
   constructor(
     @InjectModel(UserAuth.name) private userModel: Model<UserAuth>,
-    private JwtService: JwtService, private mailService:MailService
+    private JwtService: JwtService,
+    private mailService: MailService,
   ) {}
 
   async createUser(user: UserDto): Promise<UserInterface> {
@@ -66,45 +67,45 @@ export class AuthService {
   }
 
   async validateSocialUser(details: any) {
-  // 1. Check if the user already exists in the database
-  let user = await this.userModel.findOne({ email: details.email });
+    // 1. Check if the user already exists in the database
+    let user = await this.userModel.findOne({ email: details.email });
 
-  if (user && user.status === 'Suspended') {
-    throw new UnauthorizedException('Your account has been suspended.');
+    if (user && user.status === 'Suspended') {
+      throw new UnauthorizedException('Your account has been suspended.');
+    }
+
+    // 2. If the user does NOT exist, create a new one
+    if (!user) {
+      // console.log('User not found. Creating new social user...');
+
+      // Generate a random password if your Mongoose schema requires the password field
+      // const randomPassword = Math.random().toString(36).slice(-8);
+      // const hashedPassword = await bcrypt.hash(randomPassword, 10);
+
+      const newUser = new this.userModel({
+        email: details.email,
+        role: details.role,
+        // password: hashedPassword, // Kept this in case your schema strictly requires it
+      });
+
+      // Assign the newly saved user to the 'user' variable
+      user = await newUser.save();
+    }
+
+    // 3. Generate the JWT payload
+    // IMPORTANT: Added 'role' here so your Next.js frontend can decode it!
+    const payload = {
+      email: user.email,
+      sub: user._id,
+      role: user.role,
+    };
+
+    // 4. Return the generated token and role to be sent to the client
+    return {
+      access_token: this.JwtService.sign(payload),
+      role: user.role,
+    };
   }
-
-  // 2. If the user does NOT exist, create a new one
-  if (!user) {
-    // console.log('User not found. Creating new social user...');
-    
-    // Generate a random password if your Mongoose schema requires the password field
-    // const randomPassword = Math.random().toString(36).slice(-8);
-    // const hashedPassword = await bcrypt.hash(randomPassword, 10);
-
-    const newUser = new this.userModel({
-      email: details.email,
-      role: details.role, 
-      // password: hashedPassword, // Kept this in case your schema strictly requires it
-    });
-    
-    // Assign the newly saved user to the 'user' variable
-    user = await newUser.save();
-  }
-
-  // 3. Generate the JWT payload
-  // IMPORTANT: Added 'role' here so your Next.js frontend can decode it!
-  const payload = { 
-    email: user.email, 
-    sub: user._id,
-    role: user.role 
-  };
-
-  // 4. Return the generated token and role to be sent to the client
-  return {
-    access_token: this.JwtService.sign(payload),
-    role: user.role,
-  };
-}
 
   async generateJwt(user: any) {
     const payload = {
@@ -121,7 +122,6 @@ export class AuthService {
 
   // 1. Send OTP
   async sendOTP(dto: SendOtpDto) {
-    
     const { email } = dto;
     const user = await this.userModel.findOne({ email });
 
@@ -192,5 +192,4 @@ export class AuthService {
 
     return { message: 'Password reset successfully' };
   }
-
 }

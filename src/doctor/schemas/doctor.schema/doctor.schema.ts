@@ -1,6 +1,25 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
+@Schema({ _id: true, timestamps: true })
+class DoctorReview {
+  @Prop({ type: Types.ObjectId, required: true })
+  patientId!: Types.ObjectId;
+
+  @Prop({ required: true })
+  userName!: string;
+
+  @Prop({ required: true, min: 1, max: 5 })
+  rating!: number;
+
+  @Prop({ required: true })
+  comment!: string;
+
+  createdAt?: Date;
+}
+
+const DoctorReviewSchema = SchemaFactory.createForClass(DoctorReview);
+
 // 🗓️ Sub-schema for Availability (Nested Object)
 @Schema({ _id: false }) // No need for separate IDs for slots
 class AvailabilitySlot {
@@ -15,14 +34,12 @@ class AvailabilitySlot {
 
   @Prop({ default: true })
   isAvailable!: boolean;
-  
 }
 const AvailabilitySchema = SchemaFactory.createForClass(AvailabilitySlot);
 
 // 🎓 Main Doctor Schema
 @Schema({ timestamps: true })
 export class Doctor extends Document {
-  
   // 🔗 Link to UserAuth (Login Creds)
   @Prop({ type: Types.ObjectId, ref: 'UserAuth', required: true, unique: true })
   userId!: Types.ObjectId;
@@ -31,56 +48,69 @@ export class Doctor extends Document {
   @Prop({ required: true })
   fullName!: string;
 
-  @Prop({required:true})
-  email!:string;
-  
-  @Prop({required:true})
-  phoneNumber!:string;
+  @Prop({ required: true })
+  email!: string;
+
+  @Prop({ required: true })
+  phoneNumber!: string;
 
   @Prop()
-  language!:string[];
-
+  language!: string[];
 
   @Prop({ required: true }) // e.g. "Cardiologist", "General Physician"
   specialization!: string;
+
+  @Prop({ type: [String], default: [] })
+  services!: string[];
 
   @Prop({ required: true })
   experienceYears!: number;
 
   @Prop()
-  LicenseNumber!:number;
+  LicenseNumber!: number;
 
   @Prop()
-  medicalBoard!:string;
+  medicalBoard!: string;
 
   @Prop()
-  Bio!:string;
+  Bio!: string;
 
   // @Prop([String]) // e.g. ["MBBS", "MD - Cardiology"]
   // qualifications!: string[];
-
 
   // @Prop()
   // about!: string; // Short bio
 
   // 🏥 Clinic / Hospital Info
   @Prop()
+  @Prop()
+  @Prop()
+  clinicLatitude!: number;
+
+  @Prop()
+  clinicLongitude!: number;
+
+  videoConsultationFee!: number;
+
   clinicName!: string;
 
   @Prop()
   clinicAddress!: string;
 
   @Prop()
-  city!:string;
+  city!: string;
 
   @Prop()
-  province!:string;
+  province!: string;
 
   @Prop()
   consultationFee!: number;
 
   @Prop({ default: true })
   isVideoEnabled?: boolean;
+
+  @Prop({ default: false })
+  allowWhatsAppVideoConsultation?: boolean;
 
   // 📅 Availability (Array of Slots)
   @Prop({ type: [AvailabilitySchema], default: [] })
@@ -92,6 +122,8 @@ export class Doctor extends Document {
 
   // @Prop({ default: 0 })
   // reviewCount!: number;
+  @Prop({ type: [DoctorReviewSchema], default: [] })
+  reviews!: DoctorReview[];
 
   // 🖼️ Profile Image
   @Prop()

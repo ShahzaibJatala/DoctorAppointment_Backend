@@ -27,6 +27,40 @@ export class CompounderService {
     private readonly patientService: PatientService,
     private readonly realtimeService: RealtimeService,
   ) {}
+  private linkedDoctorIds(compounder: any): string[] {
+    const ids = (compounder.doctorIds || []).map((id: any) => id.toString());
+    if (compounder.doctorId && !ids.includes(compounder.doctorId.toString())) {
+      ids.push(compounder.doctorId.toString());
+    }
+    return ids;
+  }
+
+  private async resolveDoctorId(compounderUserId: string, requestedDoctorId?: string): Promise<Types.ObjectId> {
+    const compounder = await this.compounderModel.findOne({
+      userId: { $in: [compounderUserId, new Types.ObjectId(compounderUserId)] },
+    });
+    if (!compounder) throw new NotFoundException('Compounder profile not found.');
+
+    const linkedIds = this.linkedDoctorIds(compounder);
+    const selected = requestedDoctorId || linkedIds[0];
+    if (!selected || !linkedIds.includes(selected)) {
+      throw new BadRequestException('Select a doctor connected to this compounder.');
+    }
+    return new Types.ObjectId(selected);
+  }
+
+  private async doctorForUser(doctorUserId: string): Promise<Doctor> {
+    const doctor = await this.doctorModel.findOne({
+      userId: { $in: [doctorUserId, new Types.ObjectId(doctorUserId)] },
+    });
+    if (!doctor) throw new NotFoundException('Doctor profile not found.');
+    return doctor;
+  }
+
+  private escapeRegex(value: string): string {
+    return value.replace(/[.*+?^$()|[\]\\]/g, '\\$&');
+  }
+
 
   async createCompounder(
     doctorUserId: string,
@@ -80,6 +114,7 @@ export class CompounderService {
       fullName: createCompounderDto.fullName,
       email: createCompounderDto.email,
       phoneNumber: createCompounderDto.phoneNumber,
+      doctorIds: [doctor._id],
     });
 
     return await newCompounder.save();
@@ -106,7 +141,7 @@ export class CompounderService {
       await doctor.save();
     }
     const list = await this.compounderModel
-      .find({ doctorId: doctor._id })
+      .find({ $or: [{ doctorIds: doctor._id }, { doctorId: doctor._id }] })
       .lean()
       .exec();
     const userIds = list.map((c) => c.userId);
@@ -126,30 +161,108 @@ export class CompounderService {
     });
   }
 
+  async searchCompounders(doctorUserId: string, query: string): Promise<any[]> {
+    const doctor = await this.doctorForUser(doctorUserId);
+    const term = query.trim();
+    if (term.length < 2) return [];
+    const regex = new RegExp(this.escapeRegex(term), 'i');
+    const compounds = await this.compounderModel.find({
+      $or: [{ fullName: regex }, { email: regex }, { phoneNumber: regex }],
+    }).limit(10).lean().exec();
+
+    return compounds.map((compounder: any) => {
+      const linked = this.linkedDoctorIds(compounder).includes(doctor._id.toString());
+      const pending = (compounder.invitations || []).some(
+        (invitation: any) => invitation.doctorId.toString() === doctor._id.toString() && invitation.status === 'pending',
+      );
+      return { ...compounder, linked, pending };
+    });
+  }
+
+  async inviteCompounder(doctorUserId: string, compounderId: string): Promise<any> {
+    const doctor = await this.doctorForUser(doctorUserId);
+    const compounder = await this.compounderModel.findById(compounderId);
+    if (!compounder) throw new NotFoundException('Compounder not found.');
+    if (this.linkedDoctorIds(compounder).includes(doctor._id.toString())) {
+      throw new ConflictException('This compounder is already connected to you.');
+    }
+    const existingPending = (compounder.invitations || []).some(
+      (invitation: any) => invitation.doctorId.toString() === doctor._id.toString() && invitation.status === 'pending',
+    );
+    if (existingPending) throw new ConflictException('Invitation already sent.');
+    (compounder.invitations as any).push({ doctorId: doctor._id, status: 'pending', invitedAt: new Date() });
+    await compounder.save();
+    return { success: true, message: 'Invitation sent.' };
+  }
+
+  async getInvitations(compounderUserId: string): Promise<any[]> {
+    const compounder = await this.compounderModel.findOne({
+      userId: { $in: [compounderUserId, new Types.ObjectId(compounderUserId)] },
+    }).lean();
+    if (!compounder) throw new NotFoundException('Compounder profile not found.');
+    const pending = (compounder.invitations || []).filter((item: any) => item.status === 'pending');
+    const doctors = await this.doctorModel.find({
+      _id: { $in: pending.map((item: any) => item.doctorId) },
+    }).lean();
+    return pending.map((invitation: any) => ({
+      invitationId: invitation._id.toString(),
+      invitedAt: invitation.invitedAt,
+      doctor: doctors.find((doctor: any) => doctor._id.toString() === invitation.doctorId.toString()),
+    }));
+  }
+
+  async respondToInvitation(compounderUserId: string, invitationId: string, accept: boolean): Promise<any> {
+    const compounder = await this.compounderModel.findOne({
+      userId: { $in: [compounderUserId, new Types.ObjectId(compounderUserId)] },
+    });
+    if (!compounder) throw new NotFoundException('Compounder profile not found.');
+    const invitation = (compounder.invitations as any).id(invitationId);
+    if (!invitation || invitation.status !== 'pending') {
+      throw new NotFoundException('Pending invitation not found.');
+    }
+    invitation.status = accept ? 'accepted' : 'rejected';
+    if (accept && !this.linkedDoctorIds(compounder).includes(invitation.doctorId.toString())) {
+      compounder.doctorIds.push(invitation.doctorId);
+    }
+    await compounder.save();
+    return { success: true, accepted: accept };
+  }
+
+  async getConnectedDoctors(compounderUserId: string): Promise<Doctor[]> {
+    const compounder = await this.compounderModel.findOne({
+      userId: { $in: [compounderUserId, new Types.ObjectId(compounderUserId)] },
+    });
+    if (!compounder) throw new NotFoundException('Compounder profile not found.');
+    return this.doctorModel.find({ _id: { $in: this.linkedDoctorIds(compounder) } }).exec();
+  }
+
   async getLinkedDoctor(compounderUserId: string): Promise<Doctor> {
     const compounder = await this.compounderModel.findOne({
       userId: { $in: [compounderUserId, new Types.ObjectId(compounderUserId)] },
     });
+
     if (!compounder) {
       throw new NotFoundException('Compounder profile not found.');
     }
-    const doctor = await this.doctorModel.findById(compounder.doctorId).exec();
+    const doctorId = await this.resolveDoctorId(compounderUserId);
+    const doctor = await this.doctorModel.findById(doctorId).exec();
     if (!doctor) {
       throw new NotFoundException('Linked doctor profile not found.');
     }
     return doctor;
   }
 
-  async getQueueForToday(compounderUserId: string): Promise<any[]> {
+  async getQueueForToday(compounderUserId: string, selectedDoctorId?: string): Promise<any[]> {
     const compounder = await this.compounderModel.findOne({
       userId: { $in: [compounderUserId, new Types.ObjectId(compounderUserId)] },
     });
     if (!compounder) {
       throw new NotFoundException('Compounder profile not found.');
     }
+    const doctorId = await this.resolveDoctorId(compounderUserId, selectedDoctorId);
 
     const doctorRecord = await this.patientsOfDoctor
-      .findOne({ doctorId: compounder.doctorId })
+      .findOne({ doctorId })
       .exec();
     if (
       !doctorRecord ||
@@ -194,6 +307,10 @@ export class CompounderService {
           tokenNumber: (appointment as any).tokenNumber,
           mobileWalletNumber: (appointment as any).mobileWalletNumber,
           bankTransferReceiptUrl: (appointment as any).bankTransferReceiptUrl,
+          patientName: (appointment as any).patientName,
+          patientAge: (appointment as any).patientAge,
+          patientPhone: (appointment as any).patientPhone,
+          patientGender: (appointment as any).patientGender,
         };
       });
 
@@ -205,9 +322,50 @@ export class CompounderService {
     return todayAppointments;
   }
 
+  async getAllBookings(compounderUserId: string, selectedDoctorId?: string): Promise<any[]> {
+    const compounder = await this.compounderModel.findOne({
+      userId: { $in: [compounderUserId, new Types.ObjectId(compounderUserId)] },
+    });
+    if (!compounder) throw new NotFoundException('Compounder profile not found.');
+
+    const doctorId = await this.resolveDoctorId(compounderUserId, selectedDoctorId);
+    const doctorRecord = await this.patientsOfDoctor.findOne({ doctorId }).exec();
+    if (!doctorRecord?.appointments?.length) return [];
+
+    const patientIds = doctorRecord.appointments.map(app => app.patientId);
+    const patients = await this.userModel
+      .find({ _id: { $in: patientIds } })
+      .select('-password -resetOtp -otpExpires -isOtpVerified')
+      .lean()
+      .exec();
+
+    return doctorRecord.appointments
+      .map(appointment => {
+        const patient = patients.find(item => item._id.toString() === appointment.patientId.toString());
+        return {
+          ...patient,
+          appointmentId: (appointment as any)._id.toString(),
+          startTime: appointment.startTime,
+          endTime: appointment.endTime,
+          appointmentType: appointment.appointmentType,
+          paymentMethod: appointment.paymentMethod,
+          status: appointment.status,
+          tokenNumber: (appointment as any).tokenNumber,
+          mobileWalletNumber: (appointment as any).mobileWalletNumber,
+          bankTransferReceiptUrl: (appointment as any).bankTransferReceiptUrl,
+          patientName: (appointment as any).patientName,
+          patientAge: (appointment as any).patientAge,
+          patientPhone: (appointment as any).patientPhone,
+          patientGender: (appointment as any).patientGender,
+        };
+      })
+      .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+  }
+
   async checkInPatient(
     compounderUserId: string,
     appointmentId: string,
+    selectedDoctorId?: string,
   ): Promise<any> {
     const compounder = await this.compounderModel.findOne({
       userId: { $in: [compounderUserId, new Types.ObjectId(compounderUserId)] },
@@ -215,10 +373,11 @@ export class CompounderService {
     if (!compounder) {
       throw new NotFoundException('Compounder profile not found.');
     }
+    const doctorId = await this.resolveDoctorId(compounderUserId, selectedDoctorId);
 
     // Find doctor record
     const doctorRecord = await this.patientsOfDoctor
-      .findOne({ doctorId: compounder.doctorId })
+      .findOne({ doctorId })
       .exec();
     if (!doctorRecord) {
       throw new NotFoundException('No appointments found for this doctor.');
@@ -242,7 +401,7 @@ export class CompounderService {
     // Update the specific appointment
     const updated = await this.patientsOfDoctor.findOneAndUpdate(
       {
-        doctorId: compounder.doctorId,
+        doctorId,
         'appointments._id': new Types.ObjectId(appointmentId),
       },
       {
@@ -284,6 +443,7 @@ export class CompounderService {
       gender: string;
       startTime: string;
     },
+    selectedDoctorId?: string,
   ): Promise<any> {
     const compounder = await this.compounderModel.findOne({
       userId: { $in: [compounderUserId, new Types.ObjectId(compounderUserId)] },
@@ -291,6 +451,7 @@ export class CompounderService {
     if (!compounder) {
       throw new NotFoundException('Compounder profile not found.');
     }
+    const doctorId = await this.resolveDoctorId(compounderUserId, selectedDoctorId);
 
     // 1. Create or find a walk-in patient user
     const mockEmail = `walkin_${body.phoneNumber}@medibook.com`;
@@ -316,7 +477,7 @@ export class CompounderService {
 
     // Check if slot is already booked for this doctor
     const isSlotTaken = await this.patientsOfDoctor.findOne({
-      doctorId: compounder.doctorId,
+      doctorId,
       appointments: {
         $elemMatch: { startTime: startDateTime, status: { $ne: 'cancelled' } },
       },
@@ -328,7 +489,7 @@ export class CompounderService {
 
     // Push appointment
     await this.patientsOfDoctor.findOneAndUpdate(
-      { doctorId: compounder.doctorId },
+      { doctorId },
       {
         $push: {
           appointments: {
@@ -338,6 +499,10 @@ export class CompounderService {
             appointmentType: 'Clinic',
             paymentMethod: 'cash',
             status: 'confirmed',
+            patientName: body.fullName,
+            patientAge: body.age,
+            patientPhone: body.phoneNumber,
+            patientGender: body.gender,
           },
         },
       },
@@ -345,7 +510,7 @@ export class CompounderService {
     );
 
     this.realtimeService.emit('appointment_booked', {
-      doctorId: compounder.doctorId,
+      doctorId,
       startTime: startDateTime.toISOString(),
       endTime: endDateTime.toISOString(),
       status: 'confirmed',
@@ -362,7 +527,7 @@ export class CompounderService {
 
     const compounder = await this.compounderModel.findOne({
       _id: new Types.ObjectId(compounderId),
-      doctorId: doctor._id,
+      $or: [{ doctorIds: doctor._id }, { doctorId: doctor._id }],
     });
     if (!compounder)
       throw new NotFoundException('Compounder not found under this doctor.');
@@ -386,13 +551,19 @@ export class CompounderService {
 
     const compounder = await this.compounderModel.findOne({
       _id: new Types.ObjectId(compounderId),
-      doctorId: doctor._id,
+      $or: [{ doctorIds: doctor._id }, { doctorId: doctor._id }],
     });
     if (!compounder)
       throw new NotFoundException('Compounder not found under this doctor.');
 
-    await this.userModel.deleteOne({ _id: compounder.userId });
-    await this.compounderModel.deleteOne({ _id: compounder._id });
+    compounder.doctorIds = (compounder.doctorIds || []).filter(
+      id => id.toString() !== doctor._id.toString(),
+    );
+    (compounder.invitations as any) = (compounder.invitations || []).filter(
+      (invitation: any) => invitation.doctorId.toString() !== doctor._id.toString(),
+    );
+    if (compounder.doctorId?.toString() === doctor._id.toString()) compounder.doctorId = undefined;
+    await compounder.save();
 
     return { success: true };
   }

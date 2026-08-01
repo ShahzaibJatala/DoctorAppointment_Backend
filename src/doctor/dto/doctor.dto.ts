@@ -1,10 +1,9 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsString,
   IsNotEmpty,
   IsNumber,
   IsArray,
-  IsOptional,
   IsEmail,
 } from 'class-validator';
 
@@ -25,66 +24,88 @@ export class CreateDoctorDto {
   @IsNotEmpty()
   phoneNumber!: string;
 
+  @Transform(({ value }) => Array.isArray(value) ? value : [value])
   @IsArray()
   @IsString({ each: true }) // Ensures every item in the array is a string
-  @IsOptional()
-  language?: string[];
+  @IsNotEmpty()
+  language!: string[];
 
   @IsString()
   @IsNotEmpty()
   specialization!: string;
 
+
+  @IsArray()
+  @Transform(({ value }) => Array.isArray(value) ? value : [value])
+  @IsString({ each: true })
+  @IsNotEmpty()
+  services!: string[];
   @IsNumber()
   @IsNotEmpty()
   @Type(() => Number)
   experienceYears!: number;
 
   @IsNumber()
-  @IsOptional()
+  @IsNotEmpty()
   @Type(() => Number)
-  LicenseNumber?: number;
+  LicenseNumber!: number;
 
   @IsString()
-  @IsOptional()
-  medicalBoard?: string;
+  @IsNotEmpty()
+  medicalBoard!: string;
 
   @IsString()
-  @IsOptional()
-  Bio?: string;
+  @IsNotEmpty()
+  Bio!: string;
 
   @IsString()
-  @IsOptional()
-  clinicName?: string;
+  @IsNotEmpty()
+  clinicName!: string;
 
   @IsString()
-  @IsOptional()
-  clinicAddress?: string;
+  @IsNotEmpty()
+  clinicAddress!: string;
 
   @IsString()
-  @IsOptional()
-  city?: string;
+  @IsNotEmpty()
+  city!: string;
 
   @IsString()
-  @IsOptional()
-  province?: string;
+  @IsNotEmpty()
+  province!: string;
 
   @IsNumber()
-  @IsOptional()
+  @IsNotEmpty()
   @Type(() => Number)
-  consultationFee?: number;
+  consultationFee!: number;
 
   // Bank Account Details
-  @IsString()
-  @IsOptional()
-  bankName?: string;
+  @IsNumber()
+  @IsNumber()
+  @IsNotEmpty()
+  @Type(() => Number)
+  clinicLatitude!: number;
+
+  @IsNumber()
+  @IsNotEmpty()
+  @Type(() => Number)
+  clinicLongitude!: number;
+
+  @IsNotEmpty()
+  @Type(() => Number)
+  videoConsultationFee!: number;
 
   @IsString()
-  @IsOptional()
-  accountHolderName?: string;
+  @IsNotEmpty()
+  bankName!: string;
 
   @IsString()
-  @IsOptional()
-  accountNumber?: string;
+  @IsNotEmpty()
+  accountHolderName!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  accountNumber!: string;
 
   // Note: Profile Picture and Document URLs are usually handled directly in the service
   // during the file upload process, so they are often excluded from the creation DTO.
