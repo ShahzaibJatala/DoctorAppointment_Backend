@@ -4,88 +4,88 @@ import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
 
 @Injectable()
 export class CloudinaryService {
-    constructor(private readonly configService: ConfigService) {
-        const cloudName = configService.get<string>('CLOUDINARY_NAME');
-        const apiKey = configService.get<string>('CLOUDINARY_API_KEY');
-        const apiSecret = configService.get<string>('CLOUDINARY_API_SECRET');
-        if (!cloudName || !apiKey || !apiSecret) {
-            throw new Error('Cloudinary configuration is missing. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET.');
-        }
-
-        cloudinary.config({
-            cloud_name: cloudName,
-            api_key: apiKey,
-            api_secret: apiSecret,
-            secure: true,
-        });
+  constructor(private readonly configService: ConfigService) {
+    const cloudName = configService.get<string>('CLOUDINARY_NAME');
+    const apiKey = configService.get<string>('CLOUDINARY_API_KEY');
+    const apiSecret = configService.get<string>('CLOUDINARY_API_SECRET');
+    if (!cloudName || !apiKey || !apiSecret) {
+      throw new Error(
+        'Cloudinary configuration is missing. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET.',
+      );
     }
 
-    async uploadImage(
-        filePath: string,
-    ): Promise<UploadApiResponse> {
-        return new Promise((resolve, reject) => {
-            cloudinary.uploader.upload(
-                filePath,
-                { folder: 'doctorProfile' },
-                (error, result) => {
-                    if (error) {
-                        return reject(error);
-                    }
-                    resolve(result as UploadApiResponse);
-                },
+    cloudinary.config({
+      cloud_name: cloudName,
+      api_key: apiKey,
+      api_secret: apiSecret,
+      secure: true,
+    });
+  }
+
+  async uploadImage(filePath: string): Promise<UploadApiResponse> {
+    return new Promise((resolve, reject) => {
+      cloudinary.uploader.upload(
+        filePath,
+        { folder: 'doctorProfile' },
+        (error, result) => {
+          if (error) {
+            return reject(error);
+          }
+          resolve(result as UploadApiResponse);
+        },
+      );
+    });
+  }
+
+  async uploadFile(filePath: string): Promise<UploadApiResponse> {
+    return new Promise((resolve, reject) => {
+      cloudinary.uploader.upload(
+        filePath,
+        { folder: 'patientReports', resource_type: 'raw' },
+        (error, result) => {
+          if (error) {
+            return reject(error);
+          }
+          resolve(result as UploadApiResponse);
+        },
+      );
+    });
+  }
+
+  async uploadPaymentReceipt(filePath: string): Promise<UploadApiResponse> {
+    return new Promise((resolve, reject) => {
+      cloudinary.uploader.upload(
+        filePath,
+        { folder: 'paymentReceipts', resource_type: 'image' },
+        (error, result) => {
+          if (error) return reject(error);
+          resolve(result as UploadApiResponse);
+        },
+      );
+    });
+  }
+  async uploadConsultationVideo(filePath: string): Promise<UploadApiResponse> {
+    return new Promise((resolve, reject) => {
+      cloudinary.uploader.upload_large(
+        filePath,
+        {
+          folder: 'videoConsultations',
+          resource_type: 'video',
+          chunk_size: 6_000_000,
+          unique_filename: true,
+          overwrite: false,
+        },
+        (error, result) => {
+          if (error) return reject(error);
+          if (!result)
+            return reject(
+              new Error(
+                'Cloudinary did not return the uploaded consultation video.',
+              ),
             );
-        });
-    }
-
-    async uploadFile(
-        filePath: string,
-    ): Promise<UploadApiResponse> {
-        return new Promise((resolve, reject) => {
-            cloudinary.uploader.upload(
-                filePath,
-                { folder: 'patientReports', resource_type: 'raw' },
-                (error, result) => {
-                    if (error) {
-                        return reject(error);
-                    }
-                    resolve(result as UploadApiResponse);
-                },
-            );
-        });
-    }
-
-    async uploadPaymentReceipt(filePath: string): Promise<UploadApiResponse> {
-        return new Promise((resolve, reject) => {
-            cloudinary.uploader.upload(
-                filePath,
-                { folder: 'paymentReceipts', resource_type: 'image' },
-                (error, result) => {
-                    if (error) return reject(error);
-                    resolve(result as UploadApiResponse);
-                },
-            );
-        });
-
-    }
-    async uploadConsultationVideo(filePath: string): Promise<UploadApiResponse> {
-        return new Promise((resolve, reject) => {
-            cloudinary.uploader.upload(
-                filePath,
-                {
-                    folder: 'videoConsultations',
-                    resource_type: 'video',
-                    transformation: [
-                        { video_codec: 'h264', bit_rate: '800k', quality: 'auto:low' },
-                    ],
-                },
-                (error, result) => {
-                    if (error) return reject(error);
-                    resolve(result as UploadApiResponse);
-                },
-            );
-        });
-    }
+          resolve(result as UploadApiResponse);
+        },
+      );
+    });
+  }
 }
-
-
-

@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Doctor } from './schemas/doctor.schema/doctor.schema';
 import { Model, Types } from 'mongoose';
@@ -27,7 +32,11 @@ export class DoctorService {
     private readonly realtimeService: RealtimeService,
   ) {}
 
-  async createDoctor(userId: string, createDoctorDto: CreateDoctorDto, file?: Express.Multer.File): Promise<Doctor> {
+  async createDoctor(
+    userId: string,
+    createDoctorDto: CreateDoctorDto,
+    file?: Express.Multer.File,
+  ): Promise<Doctor> {
     // 1. Verify User Exists AND has the 'doctor' role
     const identifyUser = await this.userModel.findById(userId);
 
@@ -36,7 +45,9 @@ export class DoctorService {
     }
 
     if (identifyUser.role !== 'doctor') {
-      throw new ForbiddenException('Only users with the doctor role can create or update a doctor profile.');
+      throw new ForbiddenException(
+        'Only users with the doctor role can create or update a doctor profile.',
+      );
     }
 
     const existingDoctor = await this.doctorModel.findOne({
@@ -44,7 +55,9 @@ export class DoctorService {
     });
 
     if (!existingDoctor && !file) {
-      throw new BadRequestException('A profile photo is required to create a doctor profile.');
+      throw new BadRequestException(
+        'A profile photo is required to create a doctor profile.',
+      );
     }
 
     // 2. Handle Cloudinary Upload
@@ -62,7 +75,9 @@ export class DoctorService {
       throw new BadRequestException(`Failed to upload profile picture.`);
     } finally {
       if (file?.path) {
-        await fs.unlink(file.path).catch((err) => console.error('Error deleting file:', err));
+        await fs
+          .unlink(file.path)
+          .catch((err) => console.error('Error deleting file:', err));
       }
     }
 
@@ -104,15 +119,25 @@ export class DoctorService {
     return doctorProfile;
   }
 
-  async assertVideoConsultationMethodAllowed(doctorId: string, method?: string) {
-    const doctor = await this.doctorModel.findById(doctorId).select('allowWhatsAppVideoConsultation');
+  async assertVideoConsultationMethodAllowed(
+    doctorId: string,
+    method?: string,
+  ) {
+    const doctor = await this.doctorModel
+      .findById(doctorId)
+      .select('allowWhatsAppVideoConsultation');
     if (!doctor) throw new NotFoundException('Doctor not found.');
     if (method === 'whatsapp' && !doctor.allowWhatsAppVideoConsultation) {
-      throw new BadRequestException('This doctor only allows video consultation on the platform.');
+      throw new BadRequestException(
+        'This doctor only allows video consultation on the platform.',
+      );
     }
   }
 
-  async addPatientToDoctor(patientId: string, patientSeatDto: PatientSeatDto): Promise<Doctor> {
+  async addPatientToDoctor(
+    patientId: string,
+    patientSeatDto: PatientSeatDto,
+  ): Promise<Doctor> {
     const {
       doctorId,
       startTime,
@@ -129,7 +154,9 @@ export class DoctorService {
     } = patientSeatDto;
 
     if (paymentMethod === 'bank_transfer' && !bankTransferReceiptUrl) {
-      throw new BadRequestException('A bank transfer receipt screenshot is required.');
+      throw new BadRequestException(
+        'A bank transfer receipt screenshot is required.',
+      );
     }
 
     // 1. Validate Doctor and Patient exist
@@ -141,7 +168,9 @@ export class DoctorService {
       videoConsultationMethod === 'whatsapp' &&
       !doctor.allowWhatsAppVideoConsultation
     ) {
-      throw new BadRequestException('This doctor only allows video consultation on the platform.');
+      throw new BadRequestException(
+        'This doctor only allows video consultation on the platform.',
+      );
     }
 
     const patient = await this.userModel.findById(patientId);
@@ -172,12 +201,22 @@ export class DoctorService {
       const birthDate = new Date((patientRecord as any).dateOfBirth);
       const today = new Date();
       profileAge = today.getFullYear() - birthDate.getFullYear();
-      if (today < new Date(today.getFullYear(), birthDate.getMonth(), birthDate.getDate())) profileAge -= 1;
+      if (
+        today <
+        new Date(today.getFullYear(), birthDate.getMonth(), birthDate.getDate())
+      )
+        profileAge -= 1;
     }
-    const bookingPatientName = patientName || (patientRecord as any).fullName || (patient as any).name || email;
+    const bookingPatientName =
+      patientName ||
+      (patientRecord as any).fullName ||
+      (patient as any).name ||
+      email;
     const bookingPatientAge = patientAge || profileAge || 1;
-    const bookingPatientPhone = patientPhone || (patientRecord as any).phoneNumber || 'Not provided';
-    const bookingPatientGender = patientGender || (patientRecord as any).gender || 'Not provided';
+    const bookingPatientPhone =
+      patientPhone || (patientRecord as any).phoneNumber || 'Not provided';
+    const bookingPatientGender =
+      patientGender || (patientRecord as any).gender || 'Not provided';
 
     // 5. Push appointment with all fields from frontend
     const updatedDoctorRecord = await this.patientsOfDoctor.findOneAndUpdate(
@@ -197,7 +236,10 @@ export class DoctorService {
             patientAge: bookingPatientAge,
             patientPhone: bookingPatientPhone,
             patientGender: bookingPatientGender,
-            videoConsultationMethod: appointmentType === 'Video' || appointmentType === 'Online' ? videoConsultationMethod || 'platform' : undefined,
+            videoConsultationMethod:
+              appointmentType === 'Video' || appointmentType === 'Online'
+                ? videoConsultationMethod || 'platform'
+                : undefined,
           },
         },
       },
@@ -205,7 +247,9 @@ export class DoctorService {
     );
 
     if (paymentMethod === 'bank_transfer' && bankTransferReceiptUrl) {
-      const appointment = updatedDoctorRecord?.appointments.filter((item) => item.patientId.toString() === patientId).at(-1) as any;
+      const appointment = updatedDoctorRecord?.appointments
+        .filter((item) => item.patientId.toString() === patientId)
+        .at(-1) as any;
 
       if (!appointment?._id) {
         throw new BadRequestException('Could not save the payment receipt.');
@@ -261,7 +305,11 @@ export class DoctorService {
 
   async getPatientsOfDoctor(userIdFromToken: string): Promise<any[]> {
     // 1. Find the Doctor Profile that belongs to this logged-in User or auto-create it
-    let doctorProfile = await this.doctorModel.findOne({ userId: { $in: [userIdFromToken, new Types.ObjectId(userIdFromToken)] } }).exec();
+    let doctorProfile = await this.doctorModel
+      .findOne({
+        userId: { $in: [userIdFromToken, new Types.ObjectId(userIdFromToken)] },
+      })
+      .exec();
 
     if (!doctorProfile) {
       const user = await this.userModel.findById(userIdFromToken);
@@ -283,14 +331,24 @@ export class DoctorService {
     const actualDoctorId = doctorProfile._id.toString();
 
     // 2. Search the appointments using the CORRECT Doctor ID
-    const doctorRecord = await this.patientsOfDoctor.findOne({ doctorId: actualDoctorId }).exec();
+    const doctorRecord = await this.patientsOfDoctor
+      .findOne({ doctorId: actualDoctorId })
+      .exec();
 
-    if (!doctorRecord || !doctorRecord.appointments || doctorRecord.appointments.length === 0) {
+    if (
+      !doctorRecord ||
+      !doctorRecord.appointments ||
+      doctorRecord.appointments.length === 0
+    ) {
       throw new BadRequestException('No patients found for this doctor.');
     }
 
     // 3. Remove duplicates to avoid fetching the same user multiple times from the DB
-    const uniquePatientIds = [...new Set(doctorRecord.appointments.map((app) => app.patientId.toString()))].map((id) => new Types.ObjectId(id));
+    const uniquePatientIds = [
+      ...new Set(
+        doctorRecord.appointments.map((app) => app.patientId.toString()),
+      ),
+    ].map((id) => new Types.ObjectId(id));
 
     // 4. Fetch the patients securely
     const patients = await this.userModel
@@ -308,52 +366,67 @@ export class DoctorService {
       .exec();
 
     // 5. Merge the appointment times with the patient profiles
-    const appointmentsWithPatientDetails = doctorRecord.appointments.map((appointment) => {
-      // Find the matching patient profile for this specific appointment
-      const patientProfile = patients.find((p) => p._id.toString() === appointment.patientId.toString());
+    const appointmentsWithPatientDetails = doctorRecord.appointments.map(
+      (appointment) => {
+        // Find the matching patient profile for this specific appointment
+        const patientProfile = patients.find(
+          (p) => p._id.toString() === appointment.patientId.toString(),
+        );
 
-      // Find the matching Patient document (has medicalRecords/reports)
-      const patientDoc = patientProfiles.find((p: any) => p.userId?.toString() === appointment.patientId.toString());
+        // Find the matching Patient document (has medicalRecords/reports)
+        const patientDoc = patientProfiles.find(
+          (p: any) => p.userId?.toString() === appointment.patientId.toString(),
+        );
 
-      // Filter the medical records to only return those belonging to this specific doctor
-      const filteredMedicalRecords = patientDoc
-        ? (patientDoc as any).medicalRecords.filter(
-            (rec: any) => rec.doctorId?.toString() === actualDoctorId || rec.doctorId?.toString() === doctorProfile.userId?.toString(),
-          )
-        : [];
+        // Filter the medical records to only return those belonging to this specific doctor
+        const filteredMedicalRecords = patientDoc
+          ? (patientDoc as any).medicalRecords.filter(
+              (rec: any) =>
+                rec.doctorId?.toString() === actualDoctorId ||
+                rec.doctorId?.toString() === doctorProfile.userId?.toString(),
+            )
+          : [];
 
-      // Return a new object containing everything
-      return {
-        ...patientProfile,
-        appointmentId: (appointment as any)._id ? (appointment as any)._id.toString() : undefined,
-        startTime: appointment.startTime,
-        endTime: appointment.endTime,
-        appointmentType: appointment.appointmentType,
-        paymentMethod: appointment.paymentMethod,
-        status: appointment.status,
-        tokenNumber: (appointment as any).tokenNumber,
-        mobileWalletNumber: (appointment as any).mobileWalletNumber,
-        bankTransferReceiptUrl: (appointment as any).bankTransferReceiptUrl,
-        medicalRecords: filteredMedicalRecords,
-        patientDocId: patientDoc ? (patientDoc as any)._id?.toString() : undefined,
-        patientName: (appointment as any).patientName,
-        patientAge: (appointment as any).patientAge,
-        patientPhone: (appointment as any).patientPhone,
-        patientGender: (appointment as any).patientGender,
-        videoConsultationMethod: (appointment as any).videoConsultationMethod,
-        videoCallStatus: (appointment as any).videoCallStatus,
-        videoStartedAt: (appointment as any).videoStartedAt,
-        videoEndedAt: (appointment as any).videoEndedAt,
-        videoCallEndsAt: (appointment as any).videoCallEndsAt,
-        videoPausedBy: (appointment as any).videoPausedBy,
-        videoRecordingUrl: (appointment as any).videoRecordingUrl,
-      };
-    });
+        // Return a new object containing everything
+        return {
+          ...patientProfile,
+          appointmentId: (appointment as any)._id
+            ? (appointment as any)._id.toString()
+            : undefined,
+          startTime: appointment.startTime,
+          endTime: appointment.endTime,
+          appointmentType: appointment.appointmentType,
+          paymentMethod: appointment.paymentMethod,
+          status: appointment.status,
+          tokenNumber: (appointment as any).tokenNumber,
+          mobileWalletNumber: (appointment as any).mobileWalletNumber,
+          bankTransferReceiptUrl: (appointment as any).bankTransferReceiptUrl,
+          medicalRecords: filteredMedicalRecords,
+          patientDocId: patientDoc
+            ? (patientDoc as any)._id?.toString()
+            : undefined,
+          patientName: (appointment as any).patientName,
+          patientAge: (appointment as any).patientAge,
+          patientPhone: (appointment as any).patientPhone,
+          patientGender: (appointment as any).patientGender,
+          videoConsultationMethod: (appointment as any).videoConsultationMethod,
+          videoCallStatus: (appointment as any).videoCallStatus,
+          videoStartedAt: (appointment as any).videoStartedAt,
+          videoEndedAt: (appointment as any).videoEndedAt,
+          videoCallEndsAt: (appointment as any).videoCallEndsAt,
+          videoPausedBy: (appointment as any).videoPausedBy,
+          videoRecordingUrl: (appointment as any).videoRecordingUrl,
+        };
+      },
+    );
 
     return appointmentsWithPatientDetails;
   }
 
-  async updateAppointmentStatus(appointmentId: string, status: string): Promise<any> {
+  async updateAppointmentStatus(
+    appointmentId: string,
+    status: string,
+  ): Promise<any> {
     const { Types } = require('mongoose');
     const updated = await this.patientsOfDoctor.findOneAndUpdate(
       { 'appointments._id': new Types.ObjectId(appointmentId) },
@@ -363,7 +436,9 @@ export class DoctorService {
     if (!updated) {
       throw new NotFoundException('Appointment not found.');
     }
-    const appObj = updated.appointments.find((a: any) => a._id.toString() === appointmentId);
+    const appObj = updated.appointments.find(
+      (a: any) => a._id.toString() === appointmentId,
+    );
     if (appObj) {
       this.realtimeService.emit('appointment_updated', {
         doctorId: updated.doctorId,
@@ -376,7 +451,12 @@ export class DoctorService {
     return updated;
   }
 
-  async updateAvailability(userId: string, availability: any[], isVideoEnabled?: boolean, allowWhatsAppVideoConsultation?: boolean): Promise<Doctor> {
+  async updateAvailability(
+    userId: string,
+    availability: any[],
+    isVideoEnabled?: boolean,
+    allowWhatsAppVideoConsultation?: boolean,
+  ): Promise<Doctor> {
     const existingDoctor = await this.doctorModel.findOne({
       userId: { $in: [userId, new Types.ObjectId(userId)] },
     });
@@ -388,9 +468,14 @@ export class DoctorService {
       updatePayload.isVideoEnabled = isVideoEnabled;
     }
     if (allowWhatsAppVideoConsultation !== undefined) {
-      updatePayload.allowWhatsAppVideoConsultation = allowWhatsAppVideoConsultation;
+      updatePayload.allowWhatsAppVideoConsultation =
+        allowWhatsAppVideoConsultation;
     }
-    const doctor = await this.doctorModel.findOneAndUpdate({ _id: existingDoctor._id }, { $set: updatePayload }, { new: true, runValidators: true });
+    const doctor = await this.doctorModel.findOneAndUpdate(
+      { _id: existingDoctor._id },
+      { $set: updatePayload },
+      { new: true, runValidators: true },
+    );
     if (!doctor) {
       throw new NotFoundException('Doctor profile not found.');
     }
@@ -398,7 +483,8 @@ export class DoctorService {
       doctorId: doctor._id,
       availability,
       isVideoEnabled: doctor.isVideoEnabled !== false,
-      allowWhatsAppVideoConsultation: doctor.allowWhatsAppVideoConsultation === true,
+      allowWhatsAppVideoConsultation:
+        doctor.allowWhatsAppVideoConsultation === true,
     });
     return doctor;
   }
@@ -418,16 +504,18 @@ export class DoctorService {
         'libx264',
         '-preset',
         'veryfast',
+        '-vf',
+        'scale=-2:480',
         '-crf',
-        '32',
+        '34',
         '-maxrate',
-        '700k',
+        '400k',
         '-bufsize',
-        '1400k',
+        '800k',
         '-c:a',
         'aac',
         '-b:a',
-        '64k',
+        '48k',
         '-movflags',
         '+faststart',
         outputPath,
@@ -439,7 +527,12 @@ export class DoctorService {
       child.on('error', reject);
       child.on('close', (code) => {
         if (code === 0) resolve();
-        else reject(new Error(`Video compression failed (FFmpeg exit ${code}). ${errorOutput}`));
+        else
+          reject(
+            new Error(
+              `Video compression failed (FFmpeg exit ${code}). ${errorOutput}`,
+            ),
+          );
       });
     });
     return outputPath;
@@ -451,32 +544,47 @@ export class DoctorService {
     file: Express.Multer.File,
   ): Promise<{ url: string; originalSize: number; compressedSize: number }> {
     if (!file) throw new BadRequestException('No video recording uploaded.');
-    if (!file.mimetype?.startsWith('video/')) {
-      throw new BadRequestException('The consultation recording must be a video.');
+    const hasVideoMimeType = file.mimetype?.startsWith('video/');
+    const hasVideoExtension = /\.(webm|mp4|mov|m4v)$/i.test(
+      file.originalname || '',
+    );
+    if (!hasVideoMimeType && !hasVideoExtension) {
+      throw new BadRequestException(
+        'The consultation recording must be a WebM, MP4, MOV, or M4V video.',
+      );
     }
     if (file.size > 250 * 1024 * 1024) {
-      throw new BadRequestException('The consultation recording must be 250 MB or smaller.');
+      throw new BadRequestException(
+        'The consultation recording must be 250 MB or smaller.',
+      );
     }
 
-    const doctor = await this.doctorModel.findOne({
+    const appointmentObjectId = new Types.ObjectId(appointmentId);
+    const record = await this.patientsOfDoctor.findOne({
+      'appointments._id': appointmentObjectId,
+    });
+    if (!record) throw new NotFoundException('Appointment not found.');
+
+    const ownsAppointment = await this.doctorModel.exists({
+      _id: record.doctorId,
       userId: { $in: [doctorUserId, new Types.ObjectId(doctorUserId)] },
     });
-    if (!doctor) throw new NotFoundException('Doctor profile not found.');
-    const record = await this.patientsOfDoctor.findOne({
-      doctorId: doctor._id,
-      'appointments._id': new Types.ObjectId(appointmentId),
-    });
-    if (!record) throw new ForbiddenException('This appointment does not belong to this doctor.');
+    if (!ownsAppointment) {
+      throw new ForbiddenException(
+        'This appointment does not belong to the authenticated doctor.',
+      );
+    }
 
     let compressedPath: string | undefined;
     try {
       compressedPath = await this.compressConsultationVideo(file.path);
       const compressedStats = await fs.stat(compressedPath);
-      const result = await this.cloudinaryService.uploadConsultationVideo(compressedPath);
+      const result =
+        await this.cloudinaryService.uploadConsultationVideo(compressedPath);
       const updated = await this.patientsOfDoctor.findOneAndUpdate(
         {
-          doctorId: doctor._id,
-          'appointments._id': new Types.ObjectId(appointmentId),
+          _id: record._id,
+          'appointments._id': appointmentObjectId,
         },
         {
           $set: {
@@ -488,14 +596,21 @@ export class DoctorService {
         { new: true },
       );
       if (!updated) throw new NotFoundException('Appointment not found.');
-      return { url: result.secure_url, originalSize: file.size, compressedSize: compressedStats.size };
+      return {
+        url: result.secure_url,
+        originalSize: file.size,
+        compressedSize: compressedStats.size,
+      };
     } finally {
-      if (compressedPath) await fs.unlink(compressedPath).catch(() => undefined);
+      if (compressedPath)
+        await fs.unlink(compressedPath).catch(() => undefined);
       if (file?.path) await fs.unlink(file.path).catch(() => undefined);
     }
   }
 
-  async uploadReceiptImage(file: Express.Multer.File): Promise<{ url: string }> {
+  async uploadReceiptImage(
+    file: Express.Multer.File,
+  ): Promise<{ url: string }> {
     if (!file) {
       throw new BadRequestException('No file uploaded.');
     }
@@ -503,14 +618,20 @@ export class DoctorService {
       throw new BadRequestException('The receipt must be an image.');
     }
     if (file.size > 5 * 1024 * 1024) {
-      throw new BadRequestException('The receipt image must be 5 MB or smaller.');
+      throw new BadRequestException(
+        'The receipt image must be 5 MB or smaller.',
+      );
     }
     try {
-      const result = await this.cloudinaryService.uploadPaymentReceipt(file.path);
+      const result = await this.cloudinaryService.uploadPaymentReceipt(
+        file.path,
+      );
       return { url: result.secure_url };
     } finally {
       if (file?.path) {
-        await fs.unlink(file.path).catch((err) => console.error('Error deleting temp file:', err));
+        await fs
+          .unlink(file.path)
+          .catch((err) => console.error('Error deleting temp file:', err));
       }
     }
   }

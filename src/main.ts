@@ -16,10 +16,11 @@ async function bootstrap() {
   );
 
   app.enableCors({
-    origin: [
-      'https://doctor-appointment-system-seven-xi.vercel.app',
-      'http://localhost:3000',
-    ], // Your Next.js URL
+    // origin: [
+    //   'https://doctor-appointment-system-seven-xi.vercel.app',
+    //   'http://localhost:3000',
+    // ], // Your Next.js URL
+    origin: true,
     credentials: true, // Allow cookies to be sent/received
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     allowedHeaders: 'Content-Type, Accept, Authorization',

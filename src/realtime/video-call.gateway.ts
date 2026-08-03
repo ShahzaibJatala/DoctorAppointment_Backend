@@ -21,19 +21,65 @@ type CallSocket = Socket & {
   };
 };
 
+const configuredFrontendOrigins = (process.env.FRONTEND_URL || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const allowedFrontendOrigins = new Set([
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'https://doctor-appointment-system-seven-xi.vercel.app',
+  ...configuredFrontendOrigins,
+]);
+
+function isPrivateDevelopmentOrigin(origin: string) {
+  if (process.env.NODE_ENV === 'production') return false;
+
+  try {
+    const { hostname } = new URL(origin);
+    return (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '::1' ||
+      /^10\./.test(hostname) ||
+      /^192\.168\./.test(hostname) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
 @WebSocketGateway({
   namespace: '/video-calls',
   cors: {
-    origin: ['http://localhost:3000', 'https://doctor-appointment-system-seven-xi.vercel.app'],
+    origin: (origin, callback) => {
+      // Native clients do not send Origin. Browsers must be from the configured
+      // frontend, or from a local/private address while developing on the LAN.
+      const allowed =
+        !origin ||
+        allowedFrontendOrigins.has(origin) ||
+        isPrivateDevelopmentOrigin(origin);
+      callback(allowed ? null : new Error('Origin is not allowed.'), allowed);
+    },
     credentials: true,
   },
 })
-export class VideoCallGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class VideoCallGateway
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
   @WebSocketServer()
   server!: Server;
 
-  private readonly callTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  private readonly ringingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly callTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
+  private readonly ringingTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
   private readonly ringingTimeoutMs = 45_000;
 
   constructor(
@@ -46,10 +92,13 @@ export class VideoCallGateway implements OnGatewayConnection, OnGatewayDisconnec
 
   handleConnection(client: CallSocket) {
     try {
-      const rawToken = client.handshake.auth?.token || client.handshake.headers.authorization?.replace(/^Bearer\s+/i, '');
+      const rawToken =
+        client.handshake.auth?.token ||
+        client.handshake.headers.authorization?.replace(/^Bearer\s+/i, '');
       if (!rawToken) throw new Error('Missing token');
       client.data.user = this.jwtService.verify(rawToken);
       client.data.calls = {};
+      void client.join(this.userRoom(client.data.user.sub));
     } catch {
       client.emit('call-error', { message: 'Authentication failed.' });
       client.disconnect();
@@ -58,7 +107,9 @@ export class VideoCallGateway implements OnGatewayConnection, OnGatewayDisconnec
 
   handleDisconnect(client: CallSocket) {
     Object.entries(client.data.calls || {}).forEach(([appointmentId, role]) => {
-      this.server.to(this.room(appointmentId)).emit('participant-disconnected', { role });
+      this.server
+        .to(this.room(appointmentId))
+        .emit('participant-disconnected', { role });
     });
   }
 
@@ -66,12 +117,19 @@ export class VideoCallGateway implements OnGatewayConnection, OnGatewayDisconnec
     return `appointment:${appointmentId}`;
   }
 
+  private userRoom(userId: string) {
+    return `user:${userId}`;
+  }
+
   private scheduleCompletion(appointmentId: string, remainingMs: number) {
     const currentTimer = this.callTimers.get(appointmentId);
     if (currentTimer) clearTimeout(currentTimer);
     this.callTimers.set(
       appointmentId,
-      setTimeout(() => this.completeCall(appointmentId, 'time-completed'), remainingMs),
+      setTimeout(
+        () => this.completeCall(appointmentId, 'time-completed'),
+        remainingMs,
+      ),
     );
   }
 
@@ -87,11 +145,17 @@ export class VideoCallGateway implements OnGatewayConnection, OnGatewayDisconnec
     this.ringingTimers.delete(appointmentId);
   }
 
-  private scheduleRingingExpiry(appointmentId: string, timeoutMs = this.ringingTimeoutMs) {
+  private scheduleRingingExpiry(
+    appointmentId: string,
+    timeoutMs = this.ringingTimeoutMs,
+  ) {
     this.clearRingingTimer(appointmentId);
     this.ringingTimers.set(
       appointmentId,
-      setTimeout(() => this.expireRingingCall(appointmentId), Math.max(1_000, timeoutMs)),
+      setTimeout(
+        () => this.expireRingingCall(appointmentId),
+        Math.max(1_000, timeoutMs),
+      ),
     );
   }
 
@@ -133,7 +197,9 @@ export class VideoCallGateway implements OnGatewayConnection, OnGatewayDisconnec
       'appointments._id': new Types.ObjectId(appointmentId),
     });
     if (!record) throw new Error('Appointment not found.');
-    const appointment = record.appointments.find((item: any) => item._id.toString() === appointmentId) as any;
+    const appointment = record.appointments.find(
+      (item: any) => item._id.toString() === appointmentId,
+    ) as any;
     const userId = client.data.user.sub;
     let role: 'doctor' | 'patient';
     if (appointment.patientId.toString() === userId) {
@@ -146,23 +212,35 @@ export class VideoCallGateway implements OnGatewayConnection, OnGatewayDisconnec
       if (!doctor) throw new Error('You cannot access this call.');
       role = 'doctor';
     }
-    return { appointment, role };
+    return { appointment, role, record };
   }
 
   private async joinAuthorized(client: CallSocket, appointmentId: string) {
     const context = await this.authorize(client, appointmentId);
     await client.join(this.room(appointmentId));
-    client.data.calls = { ...(client.data.calls || {}), [appointmentId]: context.role };
+    client.data.calls = {
+      ...(client.data.calls || {}),
+      [appointmentId]: context.role,
+    };
     return context;
   }
 
   @SubscribeMessage('join-call')
-  async joinCall(@ConnectedSocket() client: CallSocket, @MessageBody() body: { appointmentId: string }) {
+  async joinCall(
+    @ConnectedSocket() client: CallSocket,
+    @MessageBody() body: { appointmentId: string },
+  ) {
     try {
-      const { appointment, role } = await this.joinAuthorized(client, body.appointmentId);
+      const { appointment, role } = await this.joinAuthorized(
+        client,
+        body.appointmentId,
+      );
       if (appointment.videoCallStatus === 'ringing') {
-        const ringingAt = appointment.videoRingingAt ? new Date(appointment.videoRingingAt).getTime() : 0;
-        const remainingRingMs = this.ringingTimeoutMs - (Date.now() - ringingAt);
+        const ringingAt = appointment.videoRingingAt
+          ? new Date(appointment.videoRingingAt).getTime()
+          : 0;
+        const remainingRingMs =
+          this.ringingTimeoutMs - (Date.now() - ringingAt);
         if (!ringingAt || remainingRingMs <= 0) {
           await this.expireRingingCall(body.appointmentId);
           appointment.videoCallStatus = 'scheduled';
@@ -173,7 +251,8 @@ export class VideoCallGateway implements OnGatewayConnection, OnGatewayDisconnec
         }
       }
       if (appointment.videoCallStatus === 'active') {
-        const remainingCallMs = new Date(appointment.videoCallEndsAt).getTime() - Date.now();
+        const remainingCallMs =
+          new Date(appointment.videoCallEndsAt).getTime() - Date.now();
         if (!appointment.videoCallEndsAt || remainingCallMs <= 0) {
           await this.completeCall(body.appointmentId, 'time-completed');
           appointment.videoCallStatus = 'completed';
@@ -187,27 +266,41 @@ export class VideoCallGateway implements OnGatewayConnection, OnGatewayDisconnec
       client.emit('call-state', {
         role,
         status: appointment.videoCallStatus || 'scheduled',
+        ringingAt: appointment.videoRingingAt,
         endsAt: appointment.videoCallEndsAt,
         remainingMs: appointment.videoRemainingMs,
         pausedBy: appointment.videoPausedBy,
         method: appointment.videoConsultationMethod || 'platform',
       });
-      client.to(this.room(body.appointmentId)).emit('participant-joined', { role });
+      client
+        .to(this.room(body.appointmentId))
+        .emit('participant-joined', { role });
     } catch (error: any) {
       client.emit('call-error', { message: error.message });
     }
   }
 
   @SubscribeMessage('doctor-start-call')
-  async startCall(@ConnectedSocket() client: CallSocket, @MessageBody() body: { appointmentId: string }) {
+  async startCall(
+    @ConnectedSocket() client: CallSocket,
+    @MessageBody() body: { appointmentId: string },
+  ) {
     try {
-      const { appointment, role } = await this.joinAuthorized(client, body.appointmentId);
-      if (role !== 'doctor') throw new Error('Only the doctor can start this call.');
+      const { appointment, role, record } = await this.joinAuthorized(
+        client,
+        body.appointmentId,
+      );
+      if (role !== 'doctor')
+        throw new Error('Only the doctor can start this call.');
       if ((appointment.videoConsultationMethod || 'platform') !== 'platform') {
         throw new Error('This patient selected WhatsApp consultation.');
       }
 
-      const durationMs = Math.max(60_000, new Date(appointment.endTime).getTime() - new Date(appointment.startTime).getTime());
+      const durationMs = Math.max(
+        60_000,
+        new Date(appointment.endTime).getTime() -
+          new Date(appointment.startTime).getTime(),
+      );
       const ringingAt = new Date();
       this.clearCompletionTimer(body.appointmentId);
       await this.patientsOfDoctor.updateOne(
@@ -226,23 +319,104 @@ export class VideoCallGateway implements OnGatewayConnection, OnGatewayDisconnec
         },
       );
       this.scheduleRingingExpiry(body.appointmentId);
-      this.server.to(this.room(body.appointmentId)).emit('incoming-call', {
-        appointmentId: body.appointmentId,
-        durationMs,
-      });
+      const callingDoctor = await this.doctorModel
+        .findById(record.doctorId)
+        .select('fullName')
+        .lean();
+      this.server
+        .to([
+          this.room(body.appointmentId),
+          this.userRoom(appointment.patientId.toString()),
+        ])
+        .emit('incoming-call', {
+          appointmentId: body.appointmentId,
+          durationMs,
+          doctorName: (callingDoctor as any)?.fullName || 'Your doctor',
+          ringingAt: ringingAt.toISOString(),
+        });
+    } catch (error: any) {
+      client.emit('call-error', { message: error.message });
+    }
+  }
+  @SubscribeMessage('sync-incoming-calls')
+  async syncIncomingCalls(@ConnectedSocket() client: CallSocket) {
+    try {
+      const patientId = client.data.user?.sub;
+      if (!patientId || !Types.ObjectId.isValid(patientId)) return;
+
+      const records = await this.patientsOfDoctor
+        .find({
+          appointments: {
+            $elemMatch: {
+              patientId: new Types.ObjectId(patientId),
+              videoCallStatus: 'ringing',
+            },
+          },
+        })
+        .lean();
+
+      for (const record of records as any[]) {
+        const callingDoctor = await this.doctorModel
+          .findById(record.doctorId)
+          .select('fullName')
+          .lean();
+        for (const appointment of record.appointments || []) {
+          if (
+            appointment.patientId?.toString() !== patientId ||
+            appointment.videoCallStatus !== 'ringing'
+          ) {
+            continue;
+          }
+          const ringingAt = appointment.videoRingingAt
+            ? new Date(appointment.videoRingingAt)
+            : null;
+          const remainingRingMs = ringingAt
+            ? this.ringingTimeoutMs - (Date.now() - ringingAt.getTime())
+            : 0;
+          if (!ringingAt || remainingRingMs <= 0) {
+            await this.expireRingingCall(appointment._id.toString());
+            continue;
+          }
+          this.scheduleRingingExpiry(
+            appointment._id.toString(),
+            remainingRingMs,
+          );
+          client.emit('incoming-call', {
+            appointmentId: appointment._id.toString(),
+            durationMs: Number(appointment.videoRemainingMs || 0),
+            doctorName: (callingDoctor as any)?.fullName || 'Your doctor',
+            ringingAt: ringingAt.toISOString(),
+          });
+        }
+      }
     } catch (error: any) {
       client.emit('call-error', { message: error.message });
     }
   }
   @SubscribeMessage('patient-accept-call')
-  async acceptCall(@ConnectedSocket() client: CallSocket, @MessageBody() body: { appointmentId: string }) {
+  async acceptCall(
+    @ConnectedSocket() client: CallSocket,
+    @MessageBody() body: { appointmentId: string },
+  ) {
     try {
-      const { appointment, role } = await this.joinAuthorized(client, body.appointmentId);
-      if (role !== 'patient') throw new Error('Only the patient can accept the call.');
-      if (appointment.videoCallStatus !== 'ringing') throw new Error('This call is no longer waiting for acceptance.');
+      const { appointment, role } = await this.joinAuthorized(
+        client,
+        body.appointmentId,
+      );
+      if (role !== 'patient')
+        throw new Error('Only the patient can accept the call.');
+      if (appointment.videoCallStatus !== 'ringing')
+        throw new Error('This call is no longer waiting for acceptance.');
 
-      const fallbackDuration = Math.max(60_000, new Date(appointment.endTime).getTime() - new Date(appointment.startTime).getTime());
-      const remainingMs = Math.max(1_000, Number(appointment.videoRemainingMs) || fallbackDuration);
+      const fallbackDuration = Math.max(
+        60_000,
+        new Date(appointment.endTime).getTime() -
+          new Date(appointment.startTime).getTime(),
+      );
+      const remainingMs = Math.max(
+        1_000,
+        Number(appointment.videoRemainingMs) || fallbackDuration,
+      );
       const startedAt = new Date();
       const endsAt = new Date(startedAt.getTime() + remainingMs);
       this.clearRingingTimer(body.appointmentId);
@@ -270,22 +444,66 @@ export class VideoCallGateway implements OnGatewayConnection, OnGatewayDisconnec
     }
   }
   @SubscribeMessage('webrtc-signal')
-  async signal(@ConnectedSocket() client: CallSocket, @MessageBody() body: { appointmentId: string; signal: any }) {
+  async signal(
+    @ConnectedSocket() client: CallSocket,
+    @MessageBody() body: { appointmentId: string; signal: any },
+  ) {
     try {
       await this.joinAuthorized(client, body.appointmentId);
-      client.to(this.room(body.appointmentId)).emit('webrtc-signal', { signal: body.signal });
+      client
+        .to(this.room(body.appointmentId))
+        .emit('webrtc-signal', { signal: body.signal });
+    } catch (error: any) {
+      client.emit('call-error', { message: error.message });
+    }
+  }
+
+  @SubscribeMessage('recording-ready')
+  async recordingReady(
+    @ConnectedSocket() client: CallSocket,
+    @MessageBody() body: { appointmentId: string; url: string },
+  ) {
+    try {
+      const { appointment, role } = await this.joinAuthorized(
+        client,
+        body.appointmentId,
+      );
+      if (role !== 'doctor')
+        throw new Error(
+          'Only the doctor can publish a consultation recording.',
+        );
+      if (
+        !appointment.videoRecordingUrl ||
+        appointment.videoRecordingUrl !== body.url
+      ) {
+        throw new Error('The consultation recording has not been saved.');
+      }
+      this.server.to(this.room(body.appointmentId)).emit('recording-ready', {
+        appointmentId: body.appointmentId,
+        url: appointment.videoRecordingUrl,
+      });
     } catch (error: any) {
       client.emit('call-error', { message: error.message });
     }
   }
 
   @SubscribeMessage('pause-call')
-  async pauseCall(@ConnectedSocket() client: CallSocket, @MessageBody() body: { appointmentId: string }) {
+  async pauseCall(
+    @ConnectedSocket() client: CallSocket,
+    @MessageBody() body: { appointmentId: string },
+  ) {
     try {
-      const { appointment, role } = await this.joinAuthorized(client, body.appointmentId);
-      if (appointment.videoCallStatus !== 'active') throw new Error('Only an active call can be paused.');
+      const { appointment, role } = await this.joinAuthorized(
+        client,
+        body.appointmentId,
+      );
+      if (appointment.videoCallStatus !== 'active')
+        throw new Error('Only an active call can be paused.');
 
-      const remainingMs = Math.max(1_000, new Date(appointment.videoCallEndsAt).getTime() - Date.now());
+      const remainingMs = Math.max(
+        1_000,
+        new Date(appointment.videoCallEndsAt).getTime() - Date.now(),
+      );
       this.clearCompletionTimer(body.appointmentId);
       await this.patientsOfDoctor.updateOne(
         { 'appointments._id': new Types.ObjectId(body.appointmentId) },
@@ -298,31 +516,50 @@ export class VideoCallGateway implements OnGatewayConnection, OnGatewayDisconnec
           $unset: { 'appointments.$.videoCallEndsAt': 1 },
         },
       );
-      this.server.to(this.room(body.appointmentId)).emit('call-paused', { pausedBy: role, remainingMs });
+      this.server
+        .to(this.room(body.appointmentId))
+        .emit('call-paused', { pausedBy: role, remainingMs });
     } catch (error: any) {
       client.emit('call-error', { message: error.message });
     }
   }
   @SubscribeMessage('resume-request')
-  async requestResume(@ConnectedSocket() client: CallSocket, @MessageBody() body: { appointmentId: string }) {
+  async requestResume(
+    @ConnectedSocket() client: CallSocket,
+    @MessageBody() body: { appointmentId: string },
+  ) {
     try {
       const { role } = await this.joinAuthorized(client, body.appointmentId);
-      client.to(this.room(body.appointmentId)).emit('resume-requested', { requestedBy: role });
+      client
+        .to(this.room(body.appointmentId))
+        .emit('resume-requested', { requestedBy: role });
     } catch (error: any) {
       client.emit('call-error', { message: error.message });
     }
   }
 
   @SubscribeMessage('resume-call')
-  async resumeCall(@ConnectedSocket() client: CallSocket, @MessageBody() body: { appointmentId: string }) {
+  async resumeCall(
+    @ConnectedSocket() client: CallSocket,
+    @MessageBody() body: { appointmentId: string },
+  ) {
     try {
-      const { appointment, role } = await this.joinAuthorized(client, body.appointmentId);
-      if (appointment.videoCallStatus !== 'paused') throw new Error('This call is not paused.');
+      const { appointment, role } = await this.joinAuthorized(
+        client,
+        body.appointmentId,
+      );
+      if (appointment.videoCallStatus !== 'paused')
+        throw new Error('This call is not paused.');
       if (appointment.videoPausedBy && appointment.videoPausedBy !== role) {
-        throw new Error('Only the participant who paused the video can resume it.');
+        throw new Error(
+          'Only the participant who paused the video can resume it.',
+        );
       }
 
-      const remainingMs = Math.max(1_000, Number(appointment.videoRemainingMs) || 1_000);
+      const remainingMs = Math.max(
+        1_000,
+        Number(appointment.videoRemainingMs) || 1_000,
+      );
       const endsAt = new Date(Date.now() + remainingMs);
       await this.patientsOfDoctor.updateOne(
         { 'appointments._id': new Types.ObjectId(body.appointmentId) },
@@ -336,17 +573,31 @@ export class VideoCallGateway implements OnGatewayConnection, OnGatewayDisconnec
         },
       );
       this.scheduleCompletion(body.appointmentId, remainingMs);
-      this.server.to(this.room(body.appointmentId)).emit('call-resumed', { endsAt, remainingMs });
+      this.server
+        .to(this.room(body.appointmentId))
+        .emit('call-resumed', { endsAt, remainingMs });
     } catch (error: any) {
       client.emit('call-error', { message: error.message });
     }
   }
   @SubscribeMessage('call-time-expired')
-  async timeExpired(@ConnectedSocket() client: CallSocket, @MessageBody() body: { appointmentId: string }) {
+  async timeExpired(
+    @ConnectedSocket() client: CallSocket,
+    @MessageBody() body: { appointmentId: string },
+  ) {
     try {
-      const { appointment } = await this.joinAuthorized(client, body.appointmentId);
-      const endsAt = appointment.videoCallEndsAt ? new Date(appointment.videoCallEndsAt).getTime() : 0;
-      if (appointment.videoCallStatus === 'active' && endsAt && endsAt <= Date.now() + 1_500) {
+      const { appointment } = await this.joinAuthorized(
+        client,
+        body.appointmentId,
+      );
+      const endsAt = appointment.videoCallEndsAt
+        ? new Date(appointment.videoCallEndsAt).getTime()
+        : 0;
+      if (
+        appointment.videoCallStatus === 'active' &&
+        endsAt &&
+        endsAt <= Date.now() + 1_500
+      ) {
         await this.completeCall(body.appointmentId, 'time-completed');
       }
     } catch (error: any) {
@@ -355,10 +606,14 @@ export class VideoCallGateway implements OnGatewayConnection, OnGatewayDisconnec
   }
 
   @SubscribeMessage('doctor-end-call')
-  async endCall(@ConnectedSocket() client: CallSocket, @MessageBody() body: { appointmentId: string }) {
+  async endCall(
+    @ConnectedSocket() client: CallSocket,
+    @MessageBody() body: { appointmentId: string },
+  ) {
     try {
       const { role } = await this.joinAuthorized(client, body.appointmentId);
-      if (role !== 'doctor') throw new Error('Only the doctor can end the call.');
+      if (role !== 'doctor')
+        throw new Error('Only the doctor can end the call.');
       await this.completeCall(body.appointmentId, 'doctor-completed');
     } catch (error: any) {
       client.emit('call-error', { message: error.message });
