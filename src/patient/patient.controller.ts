@@ -128,6 +128,11 @@ export class PatientController {
     return this.patientService.getAllDoctors();
   }
 
+  @Get('doctor/:doctorId')
+  async getDoctorById(@Param('doctorId') doctorId: string): Promise<Doctor | null> {
+    return this.patientService.getDoctorById(doctorId);
+  }
+
   @Get('search-doctors')
   async searchDoctors(
     @Query('q') query = '',

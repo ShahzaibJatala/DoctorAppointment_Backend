@@ -13,6 +13,7 @@ import {
 } from 'src/doctor/schemas/patients-of-doctor.schema/patients-of-doctor.schema';
 import { CloudinaryService } from 'src/doctor/cloudinary.service';
 import { MulterModule } from '@nestjs/platform-express';
+import { UserAuth, UserSchema } from 'src/auth/user.schema';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { MulterModule } from '@nestjs/platform-express';
       { name: Patient.name, schema: PatientSchema },
       { name: Doctor.name, schema: DoctorSchema },
       { name: PatientsOfDoctor.name, schema: PatientsOfDoctorSchema },
+      { name: UserAuth.name, schema: UserSchema },
     ]),
     MulterModule.register({
       dest: './uploads',

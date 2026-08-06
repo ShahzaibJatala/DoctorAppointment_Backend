@@ -134,6 +134,7 @@ export class AdminService {
       .lean()
       .exec();
     const doctors = await this.doctorModel.find().lean().exec();
+    const docRecords = await this.patientsOfDoctorModel.find().lean().exec();
 
     return userDoctors.map((userDoc) => {
       const profile = doctors.find(
@@ -144,6 +145,32 @@ export class AdminService {
       if (!profile || !(profile as any).isVerified) {
         if (status === 'Active') status = 'Pending';
       }
+      const reviewsArr: any[] = (profile as any)?.reviews || [];
+      const realRating =
+        reviewsArr.length > 0
+          ? parseFloat(
+              (
+                reviewsArr.reduce((s: number, r: any) => s + r.rating, 0) /
+                reviewsArr.length
+              ).toFixed(1),
+            )
+          : null;
+
+      // Calculate total patients and income
+      const docRecord = docRecords.find(
+        (r) => profile && r.doctorId?.toString() === profile._id.toString(),
+      );
+      const appointments = docRecord?.appointments || [];
+      const nonCancelledAppointments = appointments.filter((a: any) => a.status !== 'cancelled');
+      const uniquePatientsCount = new Set(nonCancelledAppointments.map((a: any) => a.patientId?.toString())).size;
+      
+      const clinicFee = profile?.consultationFee || 0;
+      const videoFee = profile?.videoConsultationFee || clinicFee || 0;
+      const totalIncome = nonCancelledAppointments.reduce((sum, app) => {
+        const fee = app.appointmentType === 'Video' ? videoFee : clinicFee;
+        return sum + fee;
+      }, 0);
+
       return {
         id: userDoc._id.toString(), // Use userId so admin actions work
         name: profile
@@ -152,10 +179,10 @@ export class AdminService {
         email: userDoc.email,
         phone: profile ? profile.phoneNumber : 'No phone',
         specialty: profile ? profile.specialization : 'General Practitioner',
-        hospital: profile ? profile.clinicName : 'Clinic',
+        hospital: profile ? (profile as any).clinicName : 'Clinic',
         experience: profile ? `${profile.experienceYears} Years` : '0 Years',
-        rating: 4.8,
-        reviews: 24,
+        rating: realRating,
+        reviews: reviewsArr.length,
         status,
         joinedDate:
           profile && (profile as any).createdAt
@@ -165,6 +192,8 @@ export class AdminService {
           profile?.profilePictureUrl ||
           `https://ui-avatars.com/api/?name=${userDoc.name || 'D'}&background=16BCC8&color=fff`,
         documents: profile?.documentFileUrl ? [profile.documentFileUrl] : [],
+        totalPatients: uniquePatientsCount,
+        totalIncome: totalIncome,
       };
     });
   }
@@ -194,7 +223,7 @@ export class AdminService {
       ).length;
 
       return {
-        id: profile ? profile._id.toString() : userPat._id.toString(),
+        id: userPat._id.toString(),
         name: profile
           ? profile.fullName
           : userPat.name || userPat.email.split('@')[0],
@@ -205,7 +234,7 @@ export class AdminService {
           profile && (profile as any).createdAt
             ? new Date((profile as any).createdAt).toLocaleDateString()
             : 'N/A',
-        status: 'Active',
+        status: (userPat as any).status || 'Active',
         totalAppointments,
         lastActive: 'Active',
         avatar:
@@ -247,9 +276,11 @@ export class AdminService {
     // Bootstrap a minimal doctor profile
     await this.doctorModel.create({
       userId: user._id,
+      email: body.email,
       fullName: body.name,
       specialization: body.specialization || 'General Practitioner',
-      phoneNumber: body.phoneNumber || '',
+      phoneNumber: body.phoneNumber || 'Not provided',
+      experienceYears: 0,
       isVerified: false,
     });
 
@@ -257,12 +288,14 @@ export class AdminService {
   }
 
   async verifyDoctor(userId: string) {
-    const doctor = await this.doctorModel.findOne({
-      userId: new Types.ObjectId(userId),
-    });
-    if (!doctor) throw new NotFoundException('Doctor profile not found.');
-    doctor.isVerified = true;
-    await doctor.save();
+    // Use findOneAndUpdate to avoid validation errors on partial/admin-created profiles
+    // Use $in to handle userId stored as string or ObjectId
+    const result = await this.doctorModel.findOneAndUpdate(
+      { userId: { $in: [userId, new Types.ObjectId(userId)] } },
+      { $set: { isVerified: true } },
+      { new: true, runValidators: false },
+    );
+    if (!result) throw new NotFoundException('Doctor profile not found.');
     return { success: true };
   }
 
@@ -282,5 +315,14 @@ export class AdminService {
     await this.doctorModel.deleteOne({ userId: new Types.ObjectId(userId) });
     await this.userModel.deleteOne({ _id: new Types.ObjectId(userId) });
     return { success: true };
+  }
+
+  async suspendUser(userId: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user || user.role !== 'patient')
+      throw new NotFoundException('Patient user not found.');
+    user.status = user.status === 'Suspended' ? 'Active' : 'Suspended';
+    await user.save();
+    return { success: true, status: user.status };
   }
 }

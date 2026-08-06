@@ -10,6 +10,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Patient } from './schemas/patient.schema'; // Update with your actual path
 import { AddMedicalRecordDto, CreatePatientDto } from './dto/patient.dto';
+import { UserAuth } from 'src/auth/user.schema';
 
 
 const SYMPTOM_SPECIALTIES: Record<string, string[]> = {
@@ -54,6 +55,7 @@ export class PatientService {
     @InjectModel(Patient.name) private patientModel: Model<Patient>,
     @InjectModel(Doctor.name) private doctorModel: Model<Doctor>,
     @InjectModel(PatientsOfDoctor.name) private patientsOfDoctor: Model<PatientsOfDoctor>,
+    @InjectModel(UserAuth.name) private userModel: Model<UserAuth>,
   ) {}
 
   async createPatient(
@@ -88,8 +90,39 @@ export class PatientService {
   }
 
   async getAllDoctors(): Promise<any[]> {
-    const doctors = await this.doctorModel.find().lean().exec();
-    return this.formatDoctors(doctors);
+    // Fetch only verified doctor profiles
+    const doctors = await this.doctorModel.find({ isVerified: true }).lean().exec();
+    // Get suspended user IDs to exclude
+    const suspendedUsers = await this.userModel
+      .find({ role: 'doctor', status: 'Suspended' })
+      .select('_id')
+      .lean()
+      .exec();
+    const suspendedIds = new Set(suspendedUsers.map((u) => u._id.toString()));
+    const activeDoctors = doctors.filter(
+      (d: any) => !suspendedIds.has(d.userId?.toString()),
+    );
+    return this.formatDoctors(activeDoctors);
+  }
+
+  async getDoctorById(doctorId: string): Promise<Doctor | null> {
+    const doctor = await this.doctorModel.findById(doctorId).lean().exec();
+    if (!doctor) return null;
+    
+    // Check if doctor is verified and not suspended
+    if (!doctor.isVerified) return null;
+    
+    const suspendedUsers = await this.userModel
+      .find({ role: 'doctor', status: 'Suspended' })
+      .select('_id')
+      .lean()
+      .exec();
+    const suspendedIds = new Set(suspendedUsers.map((u) => u._id.toString()));
+    
+    if (suspendedIds.has(doctor.userId?.toString())) return null;
+    
+    const formattedDoctors = this.formatDoctors([doctor]);
+    return formattedDoctors[0];
   }
 
   private formatDoctors(doctors: any[]): any[] {
@@ -127,6 +160,8 @@ export class PatientService {
       filter.specialization = new RegExp(`^${escapeRegex(specialty)}$`, 'i');
     }
 
+    // Only show verified doctors on the public listing
+    filter.isVerified = true;
     let doctors = await this.doctorModel.find(filter).lean().exec();
 
     if (doctors.length === 0 && query.trim()) {
@@ -146,6 +181,15 @@ export class PatientService {
         ));
       });
     }
+
+    // Get suspended user IDs to exclude from search results
+    const suspendedUsers = await this.userModel
+      .find({ role: 'doctor', status: 'Suspended' })
+      .select('_id')
+      .lean()
+      .exec();
+    const suspendedIds = new Set(suspendedUsers.map((u) => u._id.toString()));
+    doctors = doctors.filter((d: any) => !suspendedIds.has(d.userId?.toString()));
 
     return this.formatDoctors(doctors);
   }

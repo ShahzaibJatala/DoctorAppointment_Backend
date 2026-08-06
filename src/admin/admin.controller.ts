@@ -62,4 +62,11 @@ export class AdminController {
   async deleteDoctor(@Param('userId') userId: string) {
     return this.adminService.deleteDoctor(userId);
   }
+
+  // ── User Management ──────────────────────────────────────
+
+  @Post('users/:userId/suspend')
+  async suspendUser(@Param('userId') userId: string) {
+    return this.adminService.suspendUser(userId);
+  }
 }
